@@ -1,11 +1,11 @@
 """
 ============================================================
-  🎯 अंतिम प्रहार महाबैच - BATCH LAUNCH BOT
-  - Group me Banner Photo + YES Enroll & Not Interested Buttons
-  - Real-time MongoDB Saving
-  - Instant Admin Private Notification on every Enrollment
-  - Admin /inrolllist command for complete list
-  - Admin /broadcast command for Launch & Purchase Notification
+  🎯 अंतिम प्रहार महाबैच - 100% BUTTON-DRIVEN BOT
+  - Admin Panel with 1-Click Interactive Buttons
+  - Group Post with [✅ YES Enroll] & [❌ Not Interested]
+  - Real-time MongoDB Saving (No Data Loss & Duplicate Lock)
+  - Instant Admin Private Alerts
+  - 1-Click List & Broadcast Buttons
 ============================================================
 """
 
@@ -17,7 +17,8 @@ from telegram import (
     Update, InlineKeyboardButton, InlineKeyboardMarkup
 )
 from telegram.ext import (
-    Application, CommandHandler, CallbackQueryHandler, ContextTypes
+    Application, CommandHandler, CallbackQueryHandler, MessageHandler,
+    ContextTypes, filters
 )
 
 import config
@@ -35,6 +36,13 @@ db = DatabaseManager(mongo_uri=config.MONGO_URI, db_name=config.MONGO_DB_NAME)
 # Path to Banner Image
 BANNER_PATH = os.path.join(os.path.dirname(__file__), "banner.jpg")
 
+# State for tracking admin broadcast input
+WAITING_FOR_BROADCAST = set()
+
+
+# ────────────────────────────────────────────────────────────
+# 1. CAPTIONS & KEYBOARDS
+# ────────────────────────────────────────────────────────────
 
 def get_banner_caption():
     return (
@@ -50,44 +58,85 @@ def get_banner_caption():
         f"👇 **क्या आप इस बैच में Enroll करना चाहते हैं?**"
     )
 
-def get_enroll_keyboard():
-    keyboard = [
+def get_group_enroll_keyboard():
+    """Group me dikhne wale buttons"""
+    return InlineKeyboardMarkup([
         [InlineKeyboardButton("✅ YES Enroll Now", callback_data="btn_yes_enroll")],
         [InlineKeyboardButton("❌ Not Interested", callback_data="btn_not_interested")]
-    ]
-    return InlineKeyboardMarkup(keyboard)
+    ])
+
+def get_admin_dashboard_keyboard():
+    """Admin ke liye 1-Click Control Buttons"""
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("📢 Group me Post Bhejein", callback_data="adm_sendpost")],
+        [
+            InlineKeyboardButton("📋 Enrolled Students List", callback_data="adm_list"),
+            InlineKeyboardButton("📊 Total Stats", callback_data="adm_stats")
+        ],
+        [InlineKeyboardButton("📨 Sabhi ko Payment Message Bhejein", callback_data="adm_ask_broadcast")],
+        [InlineKeyboardButton("🔄 Refresh Panel", callback_data="adm_refresh")]
+    ])
+
+def get_student_dm_keyboard():
+    """Student jab bot ko DM me kholega"""
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🚀 YES Enroll Now", callback_data="btn_yes_enroll")],
+        [InlineKeyboardButton("📖 Batch Details", callback_data="btn_batch_info")],
+        [InlineKeyboardButton("📞 Support / Contact", callback_data="btn_support")]
+    ])
 
 
 # ────────────────────────────────────────────────────────────
-# 1. /start COMMAND
+# 2. /start COMMAND (Admin Panel vs Student Menu)
 # ────────────────────────────────────────────────────────────
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    chat = update.effective_chat
+
+    # AGAR ADMIN HAI -> Admin Dashboard with Buttons
+    if user.id == config.ADMIN_ID and chat.type == "private":
+        students = db.get_enrolled_list()
+        admin_text = (
+            f"👑 **ADMIN CONTROL PANEL**\n"
+            f"🎯 Batch: **{config.BATCH_NAME}**\n\n"
+            f"👥 **Total Enrolled Students:** `{len(students)}`\n"
+            f"💰 **Batch Fee:** `₹{config.BATCH_FEE}`\n\n"
+            f"Niche diye gaye **Buttons** se poora bot control karein 👇"
+        )
+        await update.message.reply_text(
+            admin_text,
+            reply_markup=get_admin_dashboard_keyboard(),
+            parse_mode="Markdown"
+        )
+        return
+
+    # AGAR GROUP HAI YA STUDENT HAI
     if os.path.exists(BANNER_PATH):
         with open(BANNER_PATH, "rb") as photo:
             await update.message.reply_photo(
                 photo=photo,
                 caption=get_banner_caption(),
-                reply_markup=get_enroll_keyboard(),
+                reply_markup=get_group_enroll_keyboard() if chat.type != "private" else get_student_dm_keyboard(),
                 parse_mode="Markdown"
             )
     else:
         await update.message.reply_text(
             get_banner_caption(),
-            reply_markup=get_enroll_keyboard(),
+            reply_markup=get_group_enroll_keyboard() if chat.type != "private" else get_student_dm_keyboard(),
             parse_mode="Markdown"
         )
 
 
 # ────────────────────────────────────────────────────────────
-# 2. YES ENROLL BUTTON HANDLER (MongoDB + Admin Alert)
+# 3. YES ENROLL & NOT INTERESTED BUTTONS
 # ────────────────────────────────────────────────────────────
 
 async def yes_enroll_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     user = query.from_user
 
-    # 1. Save to MongoDB
+    # 1. Save to MongoDB (No Duplicate, No Data Loss)
     success, is_new, enrolled_time = db.enroll_student(
         user_id=user.id,
         full_name=user.full_name,
@@ -103,7 +152,6 @@ async def yes_enroll_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
     bot_username = bot_info.username
 
     if is_new:
-        # Popup for Student with guidance to start the bot
         alert_msg = (
             f"🎉 बधाई हो {user.first_name}!\n\n"
             f"आपका अंतिम प्रहार महाबैच में Enrollment दर्ज हो गया है!\n\n"
@@ -112,7 +160,7 @@ async def yes_enroll_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await query.answer(alert_msg, show_alert=True)
         logger.info(f"New Enrollment: {user.full_name} ({user.id})")
 
-        # 2. Instant Private Notification to ADMIN
+        # 2. Instant Private Alert to ADMIN
         admin_alert = (
             f"🔔 **NAYA BATCH ENROLLMENT!** 🔥\n\n"
             f"👤 **Student Name:** {user.full_name}\n"
@@ -134,31 +182,57 @@ async def yes_enroll_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
             logger.error(f"Failed to send admin notification: {e}")
 
     else:
-        # Already enrolled popup
+        # Purane member ke dobara click karne par alert
         await query.answer("ℹ️ आप पहले से ही अंतिम प्रहार महाबैच में Enroll हो चुके हैं!", show_alert=True)
 
-
-# ────────────────────────────────────────────────────────────
-# 3. NOT INTERESTED BUTTON HANDLER
-# ────────────────────────────────────────────────────────────
 
 async def not_interested_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer("👍 कोई बात नहीं! आपकी आगामी परीक्षा और तैयारी के लिए All the Best!", show_alert=True)
 
 
+async def batch_info_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    info_text = (
+        f"📖 **{config.BATCH_NAME} - Complete Information**\n\n"
+        f"🔹 **3 Books Coverage:** Parmar SSC Fatman + Rasgulla Book (Kumar Gaurav Sir) + Sudarshan Chakra\n"
+        f"🔹 **Daily Practice:** Topic-wise quizes directly based on these books\n"
+        f"🔹 **Target:** High Score in General Studies & Current Affairs\n"
+        f"💰 **Fee:** ₹{config.BATCH_FEE}\n\n"
+        f"Enroll karne ke liye niche button dabayein 👇"
+    )
+    await query.edit_message_caption(
+        caption=info_text,
+        reply_markup=get_student_dm_keyboard(),
+        parse_mode="Markdown"
+    )
+
+
+async def support_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    text = (
+        f"📞 **Help & Support**\n\n"
+        f"Kisi bhi query ya help ke liye aap Admin se contact kar sakte hain:\n"
+        f"Admin ID: `{config.ADMIN_ID}`"
+    )
+    await query.edit_message_caption(
+        caption=text,
+        reply_markup=get_student_dm_keyboard(),
+        parse_mode="Markdown"
+    )
+
+
 # ────────────────────────────────────────────────────────────
-# 4. ADMIN COMMAND: /sendpost (Group me Banner + Buttons bhejna)
+# 4. ADMIN BUTTON HANDLERS (1-Click Actions)
 # ────────────────────────────────────────────────────────────
 
-async def send_post_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    if user_id != config.ADMIN_ID:
-        await update.message.reply_text("⛔ Yeh command sirf Admin ke liye hai!")
-        return
+async def admin_sendpost_btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer("📢 Group me post bheji ja rahi hai...")
 
-    target_chat = config.GROUP_ID or update.effective_chat.id
-
+    target_chat = config.GROUP_ID
     try:
         if os.path.exists(BANNER_PATH):
             with open(BANNER_PATH, "rb") as photo:
@@ -166,39 +240,30 @@ async def send_post_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     chat_id=target_chat,
                     photo=photo,
                     caption=get_banner_caption(),
-                    reply_markup=get_enroll_keyboard(),
+                    reply_markup=get_group_enroll_keyboard(),
                     parse_mode="Markdown"
                 )
         else:
             await context.bot.send_message(
                 chat_id=target_chat,
                 text=get_banner_caption(),
-                reply_markup=get_enroll_keyboard(),
+                reply_markup=get_group_enroll_keyboard(),
                 parse_mode="Markdown"
             )
-        await update.message.reply_text(f"✅ अंतिम प्रहार महाबैच का पोस्ट Group ({target_chat}) mein bhej diya gaya hai!")
+        await query.message.reply_text(f"✅ **Success!** अंतिम प्रहार महाबैच पोस्ट Group ({target_chat}) mein chali gayi hai!")
     except Exception as e:
-        await update.message.reply_text(f"❌ Post bhejne mein error aaya: {e}")
+        await query.message.reply_text(f"❌ Post bhejne mein error aaya: {e}")
 
 
-# ────────────────────────────────────────────────────────────
-# 5. ADMIN COMMAND: /inrolllist & /enrolllist
-# ────────────────────────────────────────────────────────────
-
-async def inroll_list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    if user_id != config.ADMIN_ID:
-        await update.message.reply_text("⛔ Yeh command sirf Admin ke liye hai!")
-        return
+async def admin_list_btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
 
     students = db.get_enrolled_list()
     total = len(students)
 
     if total == 0:
-        await update.message.reply_text(
-            f"ℹ️ **{config.BATCH_NAME}** ke liye abhi tak koi enrollment nahi hua hai.",
-            parse_mode="Markdown"
-        )
+        await query.message.reply_text(f"ℹ️ **{config.BATCH_NAME}** ke liye abhi tak koi enrollment nahi hua hai.")
         return
 
     header = f"📋 **{config.BATCH_NAME} - ENROLLED STUDENTS**\n👥 **Total Enrolled:** {total}\n"
@@ -214,10 +279,10 @@ async def inroll_list_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     full_text = header + divider + "\n\n".join(lines)
 
     if len(full_text) < 4000:
-        await update.message.reply_text(full_text, parse_mode="Markdown")
+        await query.message.reply_text(full_text, parse_mode="Markdown")
     else:
-        summary_text = f"📋 **{config.BATCH_NAME} - ENROLLMENT LIST**\n👥 **Total Enrolled:** {total}\n\nPoori list text file mein attach ki gayi hai:"
-        await update.message.reply_text(summary_text, parse_mode="Markdown")
+        summary_text = f"📋 **{config.BATCH_NAME} - ENROLLMENT LIST**\n👥 **Total Enrolled:** {total}\n\nList text file mein attach ki gayi hai:"
+        await query.message.reply_text(summary_text, parse_mode="Markdown")
 
         file_content = f"BATCH: {config.BATCH_NAME}\nTOTAL ENROLLED: {total}\n" + "="*50 + "\n\n"
         for idx, s in enumerate(students, start=1):
@@ -229,86 +294,130 @@ async def inroll_list_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_document(document=bio, caption=f"📄 Enrolled Students ({total})")
 
 
-# ────────────────────────────────────────────────────────────
-# 6. ADMIN COMMAND: /broadcast (Payment & Purchase Link to Enrolled)
-# ────────────────────────────────────────────────────────────
-
-async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    if user_id != config.ADMIN_ID:
-        await update.message.reply_text("⛔ Yeh command sirf Admin ke liye hai!")
-        return
-
-    if not context.args:
-        help_msg = (
-            "⚠️ **Broadcast Message Format:**\n\n"
-            "`/broadcast <Aapka Message/Payment Link>`\n\n"
-            "**Example:**\n"
-            "`/broadcast 🎉 अंतिम प्रहार महाबैच शुरू हो चुका है! अपना बैच परचेज करने के लिए यहाँ क्लिक करें: https://...`"
-        )
-        await update.message.reply_text(help_msg, parse_mode="Markdown")
-        return
-
-    message_to_send = " ".join(context.args)
+async def admin_stats_btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
     students = db.get_enrolled_list()
+    total = len(students)
+    await query.answer(f"📊 Total Enrolled: {total} Students", show_alert=True)
 
-    if not students:
-        await update.message.reply_text("ℹ️ MongoDB me abhi tak koi student enrolled nahi hai.")
-        return
 
-    status_msg = await update.message.reply_text(
-        f"⏳ **Broadcasting to {len(students)} enrolled students...**\nKripya thoda intezaar karein."
+async def admin_ask_broadcast_btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    WAITING_FOR_BROADCAST.add(query.from_user.id)
+    cancel_btn = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="adm_cancel_broadcast")]])
+
+    await query.message.reply_text(
+        "📝 **Aap sabhi Enrolled Students ko kya message ya payment link bhejna chahte hain?**\n\n"
+        "Apna poora message yahan type karke send kar dein. (Bot use sabhi ke inbox me deliver kar dega!)\n\n"
+        "Agar abhi nahi bhejna toh niche Cancel dabayein:",
+        reply_markup=cancel_btn,
+        parse_mode="Markdown"
     )
 
-    success_count = 0
-    fail_count = 0
 
-    for s in students:
-        target_uid = s.get("user_id")
-        try:
-            await context.bot.send_message(
-                chat_id=target_uid,
-                text=message_to_send,
-                parse_mode="Markdown"
-            )
-            success_count += 1
-            await asyncio.sleep(0.05)
-        except Exception as e:
-            logger.warning(f"Could not send to {target_uid}: {e}")
-            fail_count += 1
+async def admin_cancel_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    WAITING_FOR_BROADCAST.discard(query.from_user.id)
+    await query.edit_message_text("❌ Broadcast cancel kar diya gaya.")
 
-    await status_msg.edit_text(
-        f"✅ **Batch Launch Broadcast Complete!**\n\n"
-        f"👥 Total Enrolled: {len(students)}\n"
-        f"📨 Successfully Sent: {success_count}\n"
-        f"❌ Failed (Bot Blocked/Inactive): {fail_count}",
+
+async def admin_refresh_btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer("🔄 Refreshing...")
+
+    students = db.get_enrolled_list()
+    admin_text = (
+        f"👑 **ADMIN CONTROL PANEL**\n"
+        f"🎯 Batch: **{config.BATCH_NAME}**\n\n"
+        f"👥 **Total Enrolled Students:** `{len(students)}`\n"
+        f"💰 **Batch Fee:** `₹{config.BATCH_FEE}`\n\n"
+        f"Niche diye gaye **Buttons** se poora bot control karein 👇"
+    )
+    await query.edit_message_text(
+        admin_text,
+        reply_markup=get_admin_dashboard_keyboard(),
         parse_mode="Markdown"
     )
 
 
 # ────────────────────────────────────────────────────────────
-# 7. MAIN FUNCTION
+# 5. TEXT HANDLER (Handles Broadcast Text from Admin)
+# ────────────────────────────────────────────────────────────
+
+async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+
+    if user_id in WAITING_FOR_BROADCAST and user_id == config.ADMIN_ID:
+        WAITING_FOR_BROADCAST.discard(user_id)
+        message_to_send = update.message.text
+        students = db.get_enrolled_list()
+
+        if not students:
+            await update.message.reply_text("ℹ️ Koi student enrolled nahi hai.")
+            return
+
+        status_msg = await update.message.reply_text(f"⏳ **Broadcasting to {len(students)} students...**")
+        sent = 0
+        failed = 0
+
+        for s in students:
+            target_uid = s.get("user_id")
+            try:
+                await context.bot.send_message(
+                    chat_id=target_uid,
+                    text=message_to_send,
+                    parse_mode="Markdown"
+                )
+                sent += 1
+                await asyncio.sleep(0.05)
+            except Exception:
+                failed += 1
+
+        await status_msg.edit_text(
+            f"✅ **Broadcast Completed!**\n\n"
+            f"📨 Successfully Sent: {sent}/{len(students)}\n"
+            f"❌ Blocked/Failed: {failed}",
+            parse_mode="Markdown"
+        )
+
+
+# ────────────────────────────────────────────────────────────
+# 6. MAIN FUNCTION
 # ────────────────────────────────────────────────────────────
 
 def main():
     print("=" * 60)
-    print("🚀 Starting Antim Prahar Maha Batch Bot...")
+    print("🚀 Starting Antim Prahar 100% Button-Driven Bot...")
     print(f"📌 Admin ID: {config.ADMIN_ID}")
-    print(f"📌 Batch: {config.BATCH_NAME} (₹{config.BATCH_FEE})")
     print("=" * 60)
 
     app = Application.builder().token(config.BOT_TOKEN).build()
 
-    # Handlers
+    # Commands
     app.add_handler(CommandHandler("start", start_command))
+    app.add_handler(CommandHandler("admin", start_command))
+
+    # Student Buttons
     app.add_handler(CallbackQueryHandler(yes_enroll_handler, pattern="^btn_yes_enroll$"))
     app.add_handler(CallbackQueryHandler(not_interested_handler, pattern="^btn_not_interested$"))
-    app.add_handler(CommandHandler("inrolllist", inroll_list_command))
-    app.add_handler(CommandHandler("enrolllist", inroll_list_command))
-    app.add_handler(CommandHandler("sendpost", send_post_command))
-    app.add_handler(CommandHandler("broadcast", broadcast_command))
+    app.add_handler(CallbackQueryHandler(batch_info_handler, pattern="^btn_batch_info$"))
+    app.add_handler(CallbackQueryHandler(support_handler, pattern="^btn_support$"))
 
-    print("✅ Bot is running! Waiting for group enrollments...")
+    # Admin Dashboard Buttons
+    app.add_handler(CallbackQueryHandler(admin_sendpost_btn, pattern="^adm_sendpost$"))
+    app.add_handler(CallbackQueryHandler(admin_list_btn, pattern="^adm_list$"))
+    app.add_handler(CallbackQueryHandler(admin_stats_btn, pattern="^adm_stats$"))
+    app.add_handler(CallbackQueryHandler(admin_ask_broadcast_btn, pattern="^adm_ask_broadcast$"))
+    app.add_handler(CallbackQueryHandler(admin_cancel_broadcast, pattern="^adm_cancel_broadcast$"))
+    app.add_handler(CallbackQueryHandler(admin_refresh_btn, pattern="^adm_refresh$"))
+
+    # Broadcast Text Input from Admin
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_admin_text))
+
+    print("✅ Bot is running! Waiting for clicks...")
     app.run_polling()
 
 if __name__ == "__main__":
