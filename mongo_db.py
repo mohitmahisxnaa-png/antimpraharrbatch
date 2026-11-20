@@ -107,7 +107,14 @@ class DatabaseManager:
                 print(f"Error enrolling in SQLite: {e}")
                 return False, False, ""
 
-    def remove_student(self, identifier):
+    def mark_not_interested(self, user_id):
+        """
+        Agar student pehle se enrolled tha aur ab Not Interested click karta hai,
+        toh use enrolled list se hata deta hai taaki list accurate rahe.
+        Returns: was_enrolled: bool
+        """
+        success, _ = self.remove_student(user_id)
+        return success
         """
         Student ko remove karta hai taaki wo dobara enroll kar sake.
         Accepts: user_id (int or str), username (with or without @), or full_name regex.
