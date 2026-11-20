@@ -12,6 +12,7 @@ class DatabaseManager:
         self.db_name = db_name
         self.client = None
         self.collection = None
+        self.settings_col = None
         self.is_mongo = False
         
         self._connect()
@@ -28,6 +29,7 @@ class DatabaseManager:
                 self.client.admin.command('ping')
                 db = self.client[self.db_name]
                 self.collection = db["enrolled_students"]
+                self.settings_col = db["bot_settings"]
                 # Duplicate entry rokne ke liye unique index
                 self.collection.create_index("user_id", unique=True)
                 self.is_mongo = True
@@ -50,6 +52,12 @@ class DatabaseManager:
                     enrolled_at TEXT,
                     batch_name TEXT,
                     status TEXT DEFAULT 'YES_ENROLLED'
+                )
+            """)
+            self.sqlite_conn.execute("""
+                CREATE TABLE IF NOT EXISTS bot_settings (
+                    key TEXT PRIMARY KEY,
+                    val TEXT
                 )
             """)
         self.is_mongo = False
@@ -98,6 +106,69 @@ class DatabaseManager:
             except Exception as e:
                 print(f"Error enrolling in SQLite: {e}")
                 return False, False, ""
+
+    def remove_student(self, user_id):
+        """
+        Student ko remove karta hai taaki wo dobara enroll kar sake
+        """
+        if self.is_mongo:
+            try:
+                res = self.collection.delete_one({"user_id": user_id})
+                return res.deleted_count > 0
+            except Exception as e:
+                print(f"Error removing from MongoDB: {e}")
+                return False
+        else:
+            try:
+                with self.sqlite_conn:
+                    cur = self.sqlite_conn.execute("DELETE FROM enrolled_students WHERE user_id = ?", (user_id,))
+                    return cur.rowcount > 0
+            except Exception as e:
+                print(f"Error removing from SQLite: {e}")
+                return False
+
+    def save_post_id(self, message_id):
+        """Group post message id save karta hai taaki baad me delete kar sakein"""
+        if self.is_mongo:
+            try:
+                self.settings_col.update_one({"key": "group_post_id"}, {"$set": {"val": str(message_id)}}, upsert=True)
+            except Exception:
+                pass
+        else:
+            try:
+                with self.sqlite_conn:
+                    self.sqlite_conn.execute("INSERT OR REPLACE INTO bot_settings (key, val) VALUES ('group_post_id', ?)", (str(message_id),))
+            except Exception:
+                pass
+
+    def get_post_id(self):
+        if self.is_mongo:
+            try:
+                doc = self.settings_col.find_one({"key": "group_post_id"})
+                return int(doc["val"]) if doc else None
+            except Exception:
+                return None
+        else:
+            try:
+                cur = self.sqlite_conn.cursor()
+                cur.execute("SELECT val FROM bot_settings WHERE key = 'group_post_id'")
+                row = cur.fetchone()
+                return int(row["val"]) if row else None
+            except Exception:
+                return None
+
+    def clear_post_id(self):
+        if self.is_mongo:
+            try:
+                self.settings_col.delete_one({"key": "group_post_id"})
+            except Exception:
+                pass
+        else:
+            try:
+                with self.sqlite_conn:
+                    self.sqlite_conn.execute("DELETE FROM bot_settings WHERE key = 'group_post_id'")
+            except Exception:
+                pass
 
     def get_enrolled_list(self):
         if self.is_mongo:
