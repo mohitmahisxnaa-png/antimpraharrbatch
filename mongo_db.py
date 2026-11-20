@@ -107,25 +107,64 @@ class DatabaseManager:
                 print(f"Error enrolling in SQLite: {e}")
                 return False, False, ""
 
-    def remove_student(self, user_id):
+    def remove_student(self, identifier):
         """
-        Student ko remove karta hai taaki wo dobara enroll kar sake
+        Student ko remove karta hai taaki wo dobara enroll kar sake.
+        Accepts: user_id (int or str), username (with or without @), or full_name regex.
+        Returns: (success: bool, removed_student_dict or None)
         """
+        search_str = str(identifier).strip()
+        clean_uname = search_str.lstrip("@").strip()
+        
+        # Build flexible query
+        or_conditions = [
+            {"username": f"@{clean_uname}"},
+            {"username": clean_uname},
+            {"full_name": {"$regex": f"^{search_str}$", "$options": "i"}}
+        ]
+        
+        if search_str.isdigit():
+            or_conditions.append({"user_id": int(search_str)})
+            or_conditions.append({"user_id": search_str})
+        elif isinstance(identifier, int):
+            or_conditions.append({"user_id": identifier})
+            or_conditions.append({"user_id": str(identifier)})
+
         if self.is_mongo:
             try:
-                res = self.collection.delete_one({"user_id": user_id})
-                return res.deleted_count > 0
+                # Pehle student record dhoondo taaki pata chale kaun tha
+                found = self.collection.find_one({"$or": or_conditions})
+                if not found:
+                    return False, None
+                
+                # Delete using exact _id
+                res = self.collection.delete_one({"_id": found["_id"]})
+                if res.deleted_count > 0:
+                    return True, found
+                return False, None
             except Exception as e:
                 print(f"Error removing from MongoDB: {e}")
-                return False
+                return False, None
         else:
             try:
+                cur = self.sqlite_conn.cursor()
+                # Check by user_id or username or full_name
+                cur.execute("""
+                    SELECT user_id, full_name, username, enrolled_at, batch_name 
+                    FROM enrolled_students 
+                    WHERE user_id = ? OR username = ? OR username = ? OR full_name = ?
+                """, (search_str, f"@{clean_uname}", clean_uname, search_str))
+                row = cur.fetchone()
+                if not row:
+                    return False, None
+                
+                found_dict = dict(row)
                 with self.sqlite_conn:
-                    cur = self.sqlite_conn.execute("DELETE FROM enrolled_students WHERE user_id = ?", (user_id,))
-                    return cur.rowcount > 0
+                    self.sqlite_conn.execute("DELETE FROM enrolled_students WHERE user_id = ?", (found_dict["user_id"],))
+                return True, found_dict
             except Exception as e:
                 print(f"Error removing from SQLite: {e}")
-                return False
+                return False, None
 
     def save_post_id(self, message_id):
         """Group post message id save karta hai taaki baad me delete kar sakein"""
