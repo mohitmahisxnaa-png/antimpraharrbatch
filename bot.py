@@ -166,11 +166,17 @@ async def yes_enroll_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         bot_username = context.bot.username or "antimpraharrbatch_bot"
 
         if is_new:
-            # 1. Pop-up alert for user (Screen par instant notice)
+            # 1. Pop-up alert for user (Professional & Structured Dialog)
             alert_msg = (
-                f"🎉 बधाई हो {user.first_name}!\n\n"
-                f"आपका अंतिम प्रहार महाबैच में Enrollment सफलतापूर्वक दर्ज हो गया है! ✅\n\n"
-                f"⚠️ कन्फर्मेशन व बैच अपडेट्स सीधे इनबॉक्स में पाने के लिए @{bot_username} को एक बार Start जरूर कर लें!"
+                f"🎉 REGISTRATION CONFIRMED! ✅\n"
+                f"─────────────────────────\n"
+                f"👤 Candidate: {user.full_name}\n"
+                f"🎯 Batch: {config.BATCH_NAME}\n"
+                f"💰 Batch Fee: मात्र ₹{config.BATCH_FEE}\n"
+                f"─────────────────────────\n"
+                f"📌 आपका नाम महाबैच में सफलतापूर्वक दर्ज हो चुका है!\n\n"
+                f"⚠️ महत्वपूर्ण सूचना:\n"
+                f"बैच लॉन्च होते ही पेमेंट लिंक व अपडेट्स सीधे इनबॉक्स में पाने हेतु @{bot_username} को Private DM में Start जरूर कर लें।"
             )
             await query.answer(alert_msg, show_alert=True)
             logger.info(f"New Enrollment: {user.full_name} ({user.id})")
@@ -196,23 +202,12 @@ async def yes_enroll_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 logger.info(f"Could not send DM to {user.id} (user hasn't pressed start in bot yet): {dm_err}")
                 dm_sent = False
 
-            # 3. Instant Private Alert to ADMIN (With DM Status)
+            # 3. Compact & Clean Private Alert to ADMIN (DM ko clutter na kare)
             uname_text = f"@{user.username}" if user.username else "N/A"
-            if dm_sent:
-                dm_status_text = "✅ <b>Personal DM Sent to Student!</b>"
-            else:
-                dm_status_text = f"⚠️ <i>User ne abhi bot ko DM me /start nahi kiya hai (unhe popup me bol diya gaya hai).</i>"
-
+            total_now = len(db.get_enrolled_list())
             admin_alert = (
-                f"🔔 <b>NAYA BATCH ENROLLMENT!</b> 🔥\n\n"
-                f"👤 <b>Student Name:</b> {user.full_name}\n"
-                f"🏷️ <b>Username:</b> {uname_text}\n"
-                f"🆔 <b>Telegram ID:</b> <code>{user.id}</code>\n"
-                f"📚 <b>Batch:</b> {config.BATCH_NAME}\n"
-                f"🕒 <b>Time:</b> <code>{enrolled_time}</code>\n"
-                f"📨 <b>Student Message:</b> {dm_status_text}\n"
-                f"─────────────────────\n"
-                f"✅ <i>Data MongoDB Atlas me successfully save ho gaya hai.</i>"
+                f"🔔 <b>New Enroll:</b> {user.full_name} ({uname_text})\n"
+                f"🆔 <code>{user.id}</code> | 👥 <b>Total:</b> {total_now}"
             )
 
             try:
@@ -225,26 +220,17 @@ async def yes_enroll_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 logger.error(f"Failed to send admin notification: {e}")
 
         else:
-            # Purane member ke dobara click karne par pop-up
-            await query.answer(
-                f"ℹ️ {user.first_name}, आपका नाम पहले से ही अंतिम प्रहार महाबैच लिस्ट में दर्ज है! ✅",
-                show_alert=True
+            # Purane member ke dobara click karne par student ko popup dikhega, 
+            # par ADMIN ke DM me koi repeat spam message nahi aayega!
+            already_msg = (
+                f"ℹ️ ALREADY REGISTERED\n"
+                f"─────────────────────────\n"
+                f"👤 Candidate: {user.full_name}\n"
+                f"🎯 Batch: {config.BATCH_NAME}\n"
+                f"─────────────────────────\n"
+                f"✅ आपका रजिस्ट्रेशन पहले से ही सफलतापूर्वक दर्ज है।"
             )
-            # Admin ko bhi alert bhej do taaki pata chale ki purane student ne click kiya
-            uname_text = f"@{user.username}" if user.username else "N/A"
-            try:
-                await context.bot.send_message(
-                    chat_id=config.ADMIN_ID,
-                    text=(
-                        f"ℹ️ <b>REPEAT ENROLL CLICK</b>\n\n"
-                        f"👤 {user.full_name} ({uname_text})\n"
-                        f"🆔 <code>{user.id}</code>\n"
-                        f"<i>(Yeh student pehle se MongoDB me enrolled hai)</i>"
-                    ),
-                    parse_mode="HTML"
-                )
-            except Exception:
-                pass
+            await query.answer(already_msg, show_alert=True)
 
     except Exception as err:
         logger.error(f"Error in yes_enroll_handler: {err}")
@@ -262,51 +248,45 @@ async def not_interested_handler(update: Update, context: ContextTypes.DEFAULT_T
         # Check agar yeh student pehle enrolled tha aur ab Not Interested kar raha hai
         was_enrolled = db.mark_not_interested(user.id)
 
-        # 1. User ke liye Pop-up alert
+        # 1. User ke liye Professional Pop-up alert
         if was_enrolled:
             alert_text = (
-                f"👍 ठीक है {user.first_name}!\n\n"
-                f"आपका नाम अंतिम प्रहार बैच लिस्ट से हटा दिया गया है।\n"
-                f"अगर बाद में मन बने तो आप दोबारा 'YES Enroll' बटन दबा सकते हैं!"
+                f"📋 STATUS: UN-ENROLLED ℹ️\n"
+                f"─────────────────────────\n"
+                f"👤 Candidate: {user.full_name}\n"
+                f"🎯 Batch: {config.BATCH_NAME}\n"
+                f"─────────────────────────\n"
+                f"✅ आपका नाम बैच लिस्ट से सफलतापूर्वक हटा दिया गया है।\n\n"
+                f"💡 यदि भविष्य में आप जुड़ना चाहें, तो कभी भी दोबारा 'YES Enroll' बटन दबा सकते हैं। All the Best! 🎯"
             )
         else:
-            alert_text = f"👍 कोई बात नहीं {user.first_name}! आपकी आगामी परीक्षा और तैयारी के लिए All the Best!"
+            alert_text = (
+                f"🎯 FEEDBACK RECORDED ℹ️\n"
+                f"─────────────────────────\n"
+                f"👤 Candidate: {user.full_name}\n"
+                f"─────────────────────────\n"
+                f"👍 आपकी पसंद नोट कर ली गई है।\n\n"
+                f"आपकी आगामी परीक्षा व उज्ज्वल भविष्य के लिए All the Best! ✨"
+            )
 
         await query.answer(alert_text, show_alert=True)
 
-        # 2. Admin ko instant private alert (Group me koi message nahi jayega, seedha aapke inbox me aayega)
-        uname_text = f"@{user.username}" if user.username else "N/A"
-        current_time = datetime.now(IST).strftime("%d-%m-%Y %I:%M %p")
-
+        # 2. Admin ko sirf tabhi alert bhejo agar student PEHLE enrolled tha aur ab UN-ENROLL hua hai (Faltu spam nahi)
         if was_enrolled:
+            uname_text = f"@{user.username}" if user.username else "N/A"
+            total_now = len(db.get_enrolled_list())
             admin_alert = (
-                f"❌ <b>STUDENT UN-ENROLLED! (Not Interested)</b>\n\n"
-                f"👤 <b>Name:</b> {user.full_name}\n"
-                f"🏷️ <b>Username:</b> {uname_text}\n"
-                f"🆔 <b>Telegram ID:</b> <code>{user.id}</code>\n"
-                f"🕒 <b>Time:</b> <code>{current_time}</code>\n"
-                f"─────────────────────\n"
-                f"⚠️ <i>Yeh student pehle Enrolled tha. Ab Not Interested dabane par database se automatically remove ho gaya hai!</i>"
+                f"❌ <b>Un-Enrolled:</b> {user.full_name} ({uname_text})\n"
+                f"🆔 <code>{user.id}</code> | 👥 <b>Remaining:</b> {total_now}"
             )
-        else:
-            admin_alert = (
-                f"❌ <b>NOT INTERESTED CLICK!</b>\n\n"
-                f"👤 <b>Name:</b> {user.full_name}\n"
-                f"🏷️ <b>Username:</b> {uname_text}\n"
-                f"🆔 <b>Telegram ID:</b> <code>{user.id}</code>\n"
-                f"🕒 <b>Time:</b> <code>{current_time}</code>\n"
-                f"─────────────────────\n"
-                f"💡 <i>Yeh student abhi interested nahi hai.</i>"
-            )
-
-        try:
-            await context.bot.send_message(
-                chat_id=config.ADMIN_ID,
-                text=admin_alert,
-                parse_mode="HTML"
-            )
-        except Exception as e:
-            logger.error(f"Failed to send not-interested alert: {e}")
+            try:
+                await context.bot.send_message(
+                    chat_id=config.ADMIN_ID,
+                    text=admin_alert,
+                    parse_mode="HTML"
+                )
+            except Exception as e:
+                logger.error(f"Failed to send not-interested alert: {e}")
 
     except Exception as err:
         logger.error(f"Error in not_interested_handler: {err}")
@@ -356,8 +336,6 @@ async def support_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # 1. Post Lagayein
 async def admin_sendpost_btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer("📢 Group me post bheji ja rahi hai...")
-
     target_chat = config.GROUP_ID
     try:
         # Photo + User's exact Blockquote caption + Buttons
@@ -381,38 +359,28 @@ async def admin_sendpost_btn(update: Update, context: ContextTypes.DEFAULT_TYPE)
         
         # Save post ID so it can be deleted later
         db.save_post_id(sent_msg.message_id)
-        await query.message.reply_text(
-            f"✅ <b>Success!</b> अंतिम प्रहार महाबैच पोस्ट Group ({target_chat}) mein lag gayi hai!\n\n"
-            f"Jab bhi hatani ho, aap <b>'🗑️ Group se Post Hatayein'</b> button daba sakte hain.",
-            parse_mode="HTML"
-        )
+        await query.answer("✅ Success! अंतिम प्रहार महाबैच पोस्ट Group me lag gayi hai!", show_alert=True)
     except Exception as e:
         logger.error(f"Error in sendpost: {e}")
-        await query.message.reply_text(f"❌ Post lagane mein error aaya: {e}")
+        await query.answer(f"❌ Error: {e}", show_alert=True)
 
 
 # 2. Post Hatayein / Delete Karein
 async def admin_deletepost_btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer("🗑️ Post hatayi ja rahi hai...")
 
     post_id = db.get_post_id()
     if not post_id:
-        await query.message.reply_text("ℹ️ Group mein abhi koi active enrollment post nahi mili.")
+        await query.answer("ℹ️ Group mein abhi koi active post nahi hai.", show_alert=True)
         return
 
     try:
         await context.bot.delete_message(chat_id=config.GROUP_ID, message_id=post_id)
         db.clear_post_id()
-        await query.message.reply_text(
-            "✅ <b>Post Successfully Removed!</b>\n\n"
-            "Group se enrollment post hata di gayi hai. "
-            "Jab dobara lagani ho toh <b>'📢 Group me Post Lagayein'</b> button daba dein!",
-            parse_mode="HTML"
-        )
+        await query.answer("✅ Group se post successfully hata di gayi!", show_alert=True)
     except Exception as e:
         db.clear_post_id()
-        await query.message.reply_text(f"⚠️ Post delete karne mein dikkat aayi: {e}")
+        await query.answer(f"⚠️ Error: {e}", show_alert=True)
 
 
 # 3. Student List Dekhein
@@ -424,10 +392,7 @@ async def admin_list_btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
     total = len(students)
 
     if total == 0:
-        await query.message.reply_text(
-            f"ℹ️ <b>{config.BATCH_NAME}</b> ke liye abhi tak koi enrollment nahi hua hai.",
-            parse_mode="HTML"
-        )
+        await query.answer(f"ℹ️ {config.BATCH_NAME} me abhi koi enrollment nahi hua hai.", show_alert=True)
         return
 
     header = f"📋 <b>{config.BATCH_NAME} - ENROLLED STUDENTS</b>\n👥 <b>Total Enrolled:</b> {total}\n"
@@ -455,7 +420,7 @@ async def admin_list_btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
     full_text += "\n\n💡 <i>Kisi student ko nikalne ke liye niche diye gaye <b>[❌ Remove]</b> button dabayein:</i>"
 
     if len(full_text) < 4000:
-        await query.message.reply_text(full_text, reply_markup=list_markup, parse_mode="HTML")
+        await query.edit_message_text(full_text, reply_markup=list_markup, parse_mode="HTML")
     else:
         file_content = f"BATCH: {config.BATCH_NAME}\nTOTAL ENROLLED: {total}\n" + "="*50 + "\n\n"
         for idx, s in enumerate(students, start=1):
