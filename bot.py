@@ -252,28 +252,86 @@ async def yes_enroll_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
 async def not_interested_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     user = query.from_user
-    await query.answer("👍 कोई बात नहीं! आपकी आगामी परीक्षा और तैयारी के लिए All the Best!", show_alert=True)
 
-    # Admin ko notification bhejo
-    uname_text = f"@{user.username}" if user.username else "N/A"
-    current_time = datetime.now(IST).strftime("%d-%m-%Y %I:%M %p")
-    admin_alert = (
-        f"❌ <b>NOT INTERESTED CLICK!</b>\n\n"
-        f"👤 <b>Name:</b> {user.full_name}\n"
-        f"🏷️ <b>Username:</b> {uname_text}\n"
-        f"🆔 <b>Telegram ID:</b> <code>{user.id}</code>\n"
-        f"🕒 <b>Time:</b> <code>{current_time}</code>\n"
-        f"─────────────────────\n"
-        f"💡 <i>Yeh student abhi interested nahi hai.</i>"
-    )
     try:
-        await context.bot.send_message(
-            chat_id=config.ADMIN_ID,
-            text=admin_alert,
-            parse_mode="HTML"
-        )
-    except Exception as e:
-        logger.error(f"Failed to send not-interested alert: {e}")
+        # Check agar yeh student pehle enrolled tha aur ab Not Interested kar raha hai
+        was_enrolled = db.mark_not_interested(user.id)
+
+        # 1. User ke liye Pop-up alert
+        if was_enrolled:
+            alert_text = (
+                f"👍 ठीक है {user.first_name}!\n\n"
+                f"आपका नाम अंतिम प्रहार बैच लिस्ट से हटा दिया गया है।\n"
+                f"अगर बाद में मन बने तो आप दोबारा 'YES Enroll' बटन दबा सकते हैं!"
+            )
+        else:
+            alert_text = f"👍 कोई बात नहीं {user.first_name}! आपकी आगामी परीक्षा और तैयारी के लिए All the Best!"
+
+        await query.answer(alert_text, show_alert=True)
+
+        # 2. Group me confirmation tag message
+        if update.effective_chat.type != "private":
+            try:
+                txt = (
+                    f"👍 {user.mention_html()}, आपका नाम बैच लिस्ट से हटा दिया गया है!"
+                    if was_enrolled else
+                    f"👍 {user.mention_html()}, आपकी पसंद नोट कर ली गई है! All the Best! ✨"
+                )
+                conf_msg = await context.bot.send_message(
+                    chat_id=update.effective_chat.id,
+                    text=txt,
+                    parse_mode="HTML"
+                )
+                async def auto_delete(chat_id, msg_id):
+                    await asyncio.sleep(15)
+                    try:
+                        await context.bot.delete_message(chat_id=chat_id, message_id=msg_id)
+                    except Exception:
+                        pass
+                asyncio.create_task(auto_delete(update.effective_chat.id, conf_msg.message_id))
+            except Exception as e:
+                logger.warning(f"Could not send group not-interested confirmation: {e}")
+
+        # 3. Admin ko instant private alert
+        uname_text = f"@{user.username}" if user.username else "N/A"
+        current_time = datetime.now(IST).strftime("%d-%m-%Y %I:%M %p")
+
+        if was_enrolled:
+            admin_alert = (
+                f"❌ <b>STUDENT UN-ENROLLED! (Not Interested)</b>\n\n"
+                f"👤 <b>Name:</b> {user.full_name}\n"
+                f"🏷️ <b>Username:</b> {uname_text}\n"
+                f"🆔 <b>Telegram ID:</b> <code>{user.id}</code>\n"
+                f"🕒 <b>Time:</b> <code>{current_time}</code>\n"
+                f"─────────────────────\n"
+                f"⚠️ <i>Yeh student pehle Enrolled tha. Ab Not Interested dabane par database se automatically remove ho gaya hai!</i>"
+            )
+        else:
+            admin_alert = (
+                f"❌ <b>NOT INTERESTED CLICK!</b>\n\n"
+                f"👤 <b>Name:</b> {user.full_name}\n"
+                f"🏷️ <b>Username:</b> {uname_text}\n"
+                f"🆔 <b>Telegram ID:</b> <code>{user.id}</code>\n"
+                f"🕒 <b>Time:</b> <code>{current_time}</code>\n"
+                f"─────────────────────\n"
+                f"💡 <i>Yeh student abhi interested nahi hai.</i>"
+            )
+
+        try:
+            await context.bot.send_message(
+                chat_id=config.ADMIN_ID,
+                text=admin_alert,
+                parse_mode="HTML"
+            )
+        except Exception as e:
+            logger.error(f"Failed to send not-interested alert: {e}")
+
+    except Exception as err:
+        logger.error(f"Error in not_interested_handler: {err}")
+        try:
+            await query.answer("👍 आपकी पसंद नोट कर ली गई है!", show_alert=True)
+        except Exception:
+            pass
 
 
 async def batch_info_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
