@@ -5,7 +5,7 @@
   - Blockquote styling: विशेष पुस्तकें & कीमत मात्र ₹99
   - [✅ YES Enroll Now] & [❌ Not Interested] Buttons
   - Real-time MongoDB Saving (No Data Loss & Duplicate Lock)
-  - Instant Admin Private Alerts (Enroll + Not Interested dono)
+  - Instant Admin Private Alerts
   - Admin Panel with Remove Post & Student Re-enroll
 ============================================================
 """
@@ -14,7 +14,6 @@ import os
 import io
 import asyncio
 import logging
-from datetime import datetime, timezone, timedelta
 from telegram import (
     Update, InlineKeyboardButton, InlineKeyboardMarkup
 )
@@ -42,9 +41,6 @@ BANNER_URL = "https://files.catbox.moe/pycwyv.jpg"
 # States for admin input
 WAITING_FOR_BROADCAST = set()
 WAITING_FOR_REMOVE_STUDENT = set()
-
-# Timezone
-IST = timezone(timedelta(hours=5, minutes=30))
 
 
 # ────────────────────────────────────────────────────────────
@@ -154,55 +150,103 @@ async def yes_enroll_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
     query = update.callback_query
     user = query.from_user
 
-    # 1. Save to MongoDB (No Duplicate, No Data Loss)
-    success, is_new, enrolled_time = db.enroll_student(
-        user_id=user.id,
-        full_name=user.full_name,
-        username=user.username,
-        batch_name=config.BATCH_NAME
-    )
-
-    if not success:
-        await query.answer("❌ Error aaya. Kripya dobara prayas karein.", show_alert=True)
-        return
-
-    bot_info = await context.bot.get_me()
-    bot_username = bot_info.username
-
-    if is_new:
-        alert_msg = (
-            f"🎉 बधाई हो {user.first_name}!\n\n"
-            f"आपका अंतिम प्रहार महाबैच में Enrollment दर्ज हो गया है!\n\n"
-            f"⚠️ बैच लॉन्च होते ही पेमेंट व परचेज लिंक सीधे इनबॉक्स में पाने के लिए @{bot_username} को एक बार Start जरूर कर लें!"
-        )
-        await query.answer(alert_msg, show_alert=True)
-        logger.info(f"New Enrollment: {user.full_name} ({user.id})")
-
-        # 2. Instant Private Alert to ADMIN
-        uname_text = f"@{user.username}" if user.username else "N/A"
-        admin_alert = (
-            f"🔔 <b>NAYA BATCH ENROLLMENT!</b> 🔥\n\n"
-            f"👤 <b>Student Name:</b> {user.full_name}\n"
-            f"🏷️ <b>Username:</b> {uname_text}\n"
-            f"🆔 <b>Telegram ID:</b> <code>{user.id}</code>\n"
-            f"📚 <b>Batch:</b> {config.BATCH_NAME}\n"
-            f"🕒 <b>Time:</b> <code>{enrolled_time}</code>\n"
-            f"─────────────────────\n"
-            f"✅ <i>Data MongoDB me successfully save ho gaya hai.</i>"
+    try:
+        # 1. Save to MongoDB (No Duplicate, No Data Loss)
+        success, is_new, enrolled_time = db.enroll_student(
+            user_id=user.id,
+            full_name=user.full_name,
+            username=user.username,
+            batch_name=config.BATCH_NAME
         )
 
-        try:
-            await context.bot.send_message(
-                chat_id=config.ADMIN_ID,
-                text=admin_alert,
-                parse_mode="HTML"
+        if not success:
+            await query.answer("❌ Error aaya. Kripya dobara prayas karein.", show_alert=True)
+            return
+
+        bot_username = context.bot.username or "antimpraharrbatch_bot"
+
+        if is_new:
+            # 1. Pop-up alert for user
+            alert_msg = (
+                f"🎉 बधाई हो {user.first_name}!\n\n"
+                f"आपका अंतिम प्रहार महाबैच में Enrollment सफलतापूर्वक दर्ज हो गया है! ✅\n\n"
+                f"बैच लॉन्च और पेमेंट लिंक सीधे इनबॉक्स में पाने के लिए @{bot_username} को एक बार Start जरूर कर लें!"
             )
-        except Exception as e:
-            logger.error(f"Failed to send admin notification: {e}")
+            await query.answer(alert_msg, show_alert=True)
+            logger.info(f"New Enrollment: {user.full_name} ({user.id})")
 
-    else:
-        # Purane member ke dobara click karne par alert
-        await query.answer("ℹ️ आप पहले से ही अंतिम प्रहार महाबैच में Enroll हो चुके हैं!", show_alert=True)
+            # 2. Group me confirmation tag message
+            if update.effective_chat.type != "private":
+                try:
+                    conf_msg = await context.bot.send_message(
+                        chat_id=update.effective_chat.id,
+                        text=(
+                            f"🎉 <b>बधाई हो {user.mention_html()}!</b>\n"
+                            f"आपका <b>{config.BATCH_NAME}</b> में Enrollment सफलतापूर्वक दर्ज हो गया है! 🚀"
+                        ),
+                        parse_mode="HTML"
+                    )
+                    # 15 seconds ke baad auto-delete taaki group saaf rahe
+                    async def auto_delete(chat_id, msg_id):
+                        await asyncio.sleep(15)
+                        try:
+                            await context.bot.delete_message(chat_id=chat_id, message_id=msg_id)
+                        except Exception:
+                            pass
+                    asyncio.create_task(auto_delete(update.effective_chat.id, conf_msg.message_id))
+                except Exception as e:
+                    logger.warning(f"Could not send group confirmation: {e}")
+
+            # 3. Instant Private Alert to ADMIN
+            uname_text = f"@{user.username}" if user.username else "N/A"
+            admin_alert = (
+                f"🔔 <b>NAYA BATCH ENROLLMENT!</b> 🔥\n\n"
+                f"👤 <b>Student Name:</b> {user.full_name}\n"
+                f"🏷️ <b>Username:</b> {uname_text}\n"
+                f"🆔 <b>Telegram ID:</b> <code>{user.id}</code>\n"
+                f"📚 <b>Batch:</b> {config.BATCH_NAME}\n"
+                f"🕒 <b>Time:</b> <code>{enrolled_time}</code>\n"
+                f"─────────────────────\n"
+                f"✅ <i>Data MongoDB Atlas me successfully save ho gaya hai.</i>"
+            )
+
+            try:
+                await context.bot.send_message(
+                    chat_id=config.ADMIN_ID,
+                    text=admin_alert,
+                    parse_mode="HTML"
+                )
+            except Exception as e:
+                logger.error(f"Failed to send admin notification: {e}")
+
+        else:
+            # Purane member ke dobara click karne par pop-up
+            await query.answer(
+                f"ℹ️ {user.first_name}, आपका नाम पहले से ही अंतिम प्रहार महाबैच लिस्ट में दर्ज है! ✅",
+                show_alert=True
+            )
+            # Admin ko bhi alert bhej do taaki pata chale ki purane student ne click kiya
+            uname_text = f"@{user.username}" if user.username else "N/A"
+            try:
+                await context.bot.send_message(
+                    chat_id=config.ADMIN_ID,
+                    text=(
+                        f"ℹ️ <b>REPEAT ENROLL CLICK</b>\n\n"
+                        f"👤 {user.full_name} ({uname_text})\n"
+                        f"🆔 <code>{user.id}</code>\n"
+                        f"<i>(Yeh student pehle se MongoDB me enrolled hai)</i>"
+                    ),
+                    parse_mode="HTML"
+                )
+            except Exception:
+                pass
+
+    except Exception as err:
+        logger.error(f"Error in yes_enroll_handler: {err}")
+        try:
+            await query.answer("✅ आपका Enrollment दर्ज हो गया है!", show_alert=True)
+        except Exception:
+            pass
 
 
 async def not_interested_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -214,7 +258,7 @@ async def not_interested_handler(update: Update, context: ContextTypes.DEFAULT_T
     uname_text = f"@{user.username}" if user.username else "N/A"
     current_time = datetime.now(IST).strftime("%d-%m-%Y %I:%M %p")
     admin_alert = (
-        f"❌ <b>NOT INTERESTED!</b>\n\n"
+        f"❌ <b>NOT INTERESTED CLICK!</b>\n\n"
         f"👤 <b>Name:</b> {user.full_name}\n"
         f"🏷️ <b>Username:</b> {uname_text}\n"
         f"🆔 <b>Telegram ID:</b> <code>{user.id}</code>\n"
@@ -340,28 +384,39 @@ async def admin_list_btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
     total = len(students)
 
     if total == 0:
-        await query.message.reply_text(f"ℹ️ <b>{config.BATCH_NAME}</b> ke liye abhi tak koi enrollment nahi hua hai.", parse_mode="HTML")
+        await query.message.reply_text(
+            f"ℹ️ <b>{config.BATCH_NAME}</b> ke liye abhi tak koi enrollment nahi hua hai.",
+            parse_mode="HTML"
+        )
         return
 
     header = f"📋 <b>{config.BATCH_NAME} - ENROLLED STUDENTS</b>\n👥 <b>Total Enrolled:</b> {total}\n"
     divider = "─" * 35 + "\n\n"
 
     lines = []
+    # 1-Click Remove buttons banayein taaki admin bina type kiye seedha button se remove kar sake
+    remove_buttons = []
     for idx, s in enumerate(students, start=1):
         name = s.get('full_name', 'Unknown')
         uname = s.get('username', 'N/A')
         uid = s.get('user_id', '')
         time_str = s.get('enrolled_at', '')
         lines.append(f"<b>{idx}.</b> {name} ({uname})\n   🆔 <code>{uid}</code> | 🕒 <code>{time_str}</code>")
+        
+        # Har student ka 1-click remove button (max 20)
+        if idx <= 20:
+            btn_label = f"❌ Remove {name[:14]} ({uname[:12]})"
+            remove_buttons.append([InlineKeyboardButton(btn_label, callback_data=f"del_std_{uid}")])
+
+    remove_buttons.append([InlineKeyboardButton("🔙 Back to Dashboard", callback_data="adm_refresh")])
+    list_markup = InlineKeyboardMarkup(remove_buttons)
 
     full_text = header + divider + "\n\n".join(lines)
+    full_text += "\n\n💡 <i>Kisi student ko nikalne ke liye niche diye gaye <b>[❌ Remove]</b> button dabayein:</i>"
 
     if len(full_text) < 4000:
-        await query.message.reply_text(full_text, parse_mode="HTML")
+        await query.message.reply_text(full_text, reply_markup=list_markup, parse_mode="HTML")
     else:
-        summary_text = f"📋 <b>{config.BATCH_NAME} - ENROLLMENT LIST</b>\n👥 <b>Total Enrolled:</b> {total}\n\nList text file mein attach ki gayi hai:"
-        await query.message.reply_text(summary_text, parse_mode="HTML")
-
         file_content = f"BATCH: {config.BATCH_NAME}\nTOTAL ENROLLED: {total}\n" + "="*50 + "\n\n"
         for idx, s in enumerate(students, start=1):
             file_content += f"{idx}. {s.get('full_name')} | Username: {s.get('username')} | ID: {s.get('user_id')} | Time: {s.get('enrolled_at')}\n"
@@ -369,7 +424,33 @@ async def admin_list_btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
         bio = io.BytesIO(file_content.encode('utf-8'))
         bio.name = "enrolled_students.txt"
         bio.seek(0)
-        await update.message.reply_document(document=bio, caption=f"📄 Enrolled Students ({total})")
+        await query.message.reply_document(
+            document=bio,
+            caption=f"📄 Enrolled Students ({total})",
+            reply_markup=list_markup
+        )
+
+
+# 1-Click Student Removal Button Callback
+async def admin_del_student_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    target_id = query.data.replace("del_std_", "")
+    
+    success, removed = db.remove_student(target_id)
+    if success and removed:
+        name = removed.get('full_name', 'Student')
+        uname = removed.get('username', '')
+        await query.answer(f"✅ {name} successfully removed!", show_alert=True)
+        await query.message.reply_text(
+            f"✅ <b>Student Successfully Removed!</b>\n\n"
+            f"👤 <b>Name:</b> {name}\n"
+            f"🏷️ <b>Username:</b> {uname}\n"
+            f"🆔 <b>User ID:</b> <code>{removed.get('user_id')}</code>\n\n"
+            f"Yeh student MongoDB Atlas se remove ho gaya hai aur ab <b>dobara enroll kar sakta hai</b>! 🚀",
+            parse_mode="HTML"
+        )
+    else:
+        await query.answer("❌ Student list mein nahi mila ya pehle hi remove ho chuka hai.", show_alert=True)
 
 
 # 4. Total Stats
@@ -380,7 +461,7 @@ async def admin_stats_btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer(f"📊 Total Enrolled: {total} Students", show_alert=True)
 
 
-# 5. Student Remove / Un-enroll flow
+# 5. Student Remove / Un-enroll flow (Text Input)
 async def admin_ask_remove_btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -390,9 +471,11 @@ async def admin_ask_remove_btn(update: Update, context: ContextTypes.DEFAULT_TYP
 
     await query.message.reply_text(
         "❌ <b>Kis Student ko Remove karna chahte hain?</b>\n\n"
-        "Us student ka <b>Telegram User ID</b> yahan type karke bhejein.\n"
-        "<i>(User ID aapko '📋 Enrolled Students List' mein mil jayegi)</i>\n\n"
-        "Remove karne ke baad wo student <b>dobara enroll kar sakega</b>!",
+        "Aap inme se kuch bhi yahan bhej sakte hain:\n"
+        "• <b>Telegram User ID</b> (jaise: <code>8914751355</code>)\n"
+        "• <b>Username</b> (jaise: <code>@niistharajput</code> ya <code>niistharajput</code>)\n"
+        "• <b>Student ka Name</b>\n\n"
+        "<i>(Remove hote hi yeh student dobara enroll kar sakega!)</i>",
         reply_markup=cancel_btn,
         parse_mode="HTML"
     )
@@ -460,22 +543,26 @@ async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # 1. Handling Student Removal
     if user_id in WAITING_FOR_REMOVE_STUDENT and user_id == config.ADMIN_ID:
         WAITING_FOR_REMOVE_STUDENT.discard(user_id)
-        if not text.isdigit():
-            await update.message.reply_text("⚠️ User ID sirf numbers mein hoti hai. Kripya sahi User ID bhejein.")
-            return
-
-        target_uid = int(text)
-        success = db.remove_student(target_uid)
-
-        if success:
+        
+        success, removed = db.remove_student(text)
+        if success and removed:
+            name = removed.get('full_name', 'Student')
+            uname = removed.get('username', 'N/A')
+            uid = removed.get('user_id', '')
             await update.message.reply_text(
                 f"✅ <b>Student Successfully Removed!</b>\n\n"
-                f"User ID: <code>{target_uid}</code> ko database se hata diya gaya hai. "
-                f"Ab yeh student chahe toh <b>dobara enroll kar sakta hai</b>!",
+                f"👤 <b>Name:</b> {name}\n"
+                f"🏷️ <b>Username:</b> {uname}\n"
+                f"🆔 <b>User ID:</b> <code>{uid}</code>\n\n"
+                f"Yeh student database se remove ho gaya hai aur ab <b>dobara enroll kar sakta hai</b>! 🚀",
                 parse_mode="HTML"
             )
         else:
-            await update.message.reply_text(f"❌ User ID <code>{target_uid}</code> enrollment list mein nahi mili.", parse_mode="HTML")
+            await update.message.reply_text(
+                f"❌ <code>{text}</code> enrollment list mein nahi mila.\n"
+                f"Kripya sahi User ID ya @username bhejein.",
+                parse_mode="HTML"
+            )
         return
 
     # 2. Handling Broadcast
@@ -512,22 +599,31 @@ async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
-# Command se bhi remove kar sakein: /remove <user_id>
+# Command se bhi remove kar sakein: /remove <user_id ya username>
 async def remove_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if user_id != config.ADMIN_ID:
         return
 
-    if not context.args or not context.args[0].isdigit():
-        await update.message.reply_text("⚠️ Format: <code>/remove &lt;user_id&gt;</code>\nExample: <code>/remove 12345678</code>", parse_mode="HTML")
+    if not context.args:
+        await update.message.reply_text(
+            "⚠️ Format: <code>/remove &lt;user_id ya @username&gt;</code>\n"
+            "Example: <code>/remove 8914751355</code> ya <code>/remove @niistharajput</code>",
+            parse_mode="HTML"
+        )
         return
 
-    target_uid = int(context.args[0])
-    success = db.remove_student(target_uid)
-    if success:
-        await update.message.reply_text(f"✅ User ID <code>{target_uid}</code> successfully removed! Wo ab dobara enroll kar sakta hai.", parse_mode="HTML")
+    target = context.args[0]
+    success, removed = db.remove_student(target)
+    if success and removed:
+        name = removed.get('full_name', 'Student')
+        uname = removed.get('username', 'N/A')
+        await update.message.reply_text(
+            f"✅ <b>{name}</b> ({uname}) successfully database se remove ho gaya! Wo ab dobara enroll kar sakta hai.",
+            parse_mode="HTML"
+        )
     else:
-        await update.message.reply_text(f"❌ User ID <code>{target_uid}</code> list mein nahi mili.", parse_mode="HTML")
+        await update.message.reply_text(f"❌ <code>{target}</code> list mein nahi mila.", parse_mode="HTML")
 
 
 # ────────────────────────────────────────────────────────────
@@ -557,6 +653,7 @@ def main():
     app.add_handler(CallbackQueryHandler(admin_sendpost_btn, pattern="^adm_sendpost$"))
     app.add_handler(CallbackQueryHandler(admin_deletepost_btn, pattern="^adm_deletepost$"))
     app.add_handler(CallbackQueryHandler(admin_list_btn, pattern="^adm_list$"))
+    app.add_handler(CallbackQueryHandler(admin_del_student_callback, pattern="^del_std_"))
     app.add_handler(CallbackQueryHandler(admin_stats_btn, pattern="^adm_stats$"))
     app.add_handler(CallbackQueryHandler(admin_ask_remove_btn, pattern="^adm_ask_remove$"))
     app.add_handler(CallbackQueryHandler(admin_cancel_remove, pattern="^adm_cancel_remove$"))
