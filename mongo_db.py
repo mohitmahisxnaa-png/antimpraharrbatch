@@ -115,6 +115,8 @@ class DatabaseManager:
         """
         success, _ = self.remove_student(user_id)
         return success
+
+    def remove_student(self, identifier):
         """
         Student ko remove karta hai taaki wo dobara enroll kar sake.
         Accepts: user_id (int or str), username (with or without @), or full_name regex.
