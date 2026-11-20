@@ -1,12 +1,12 @@
 """
 ============================================================
-  🎯 अंतिम प्रहार महाबैच - 100% BUTTON-DRIVEN BOT
-  - Online BANNER_URL Fallback (Photo 100% Guaranteed)
-  - Group Post [Lagayein] & [Hatayein / Remove Post] Buttons
-  - Student [Remove / Un-enroll] feature so they can enroll again
+  🎯 अंतिम प्रहार महाबैच - EXACT BANNER + BLOCKQUOTE BOT
+  - Exact User-Requested Design (Photo + Blockquote Text + Buttons)
+  - Blockquote styling: विशेष पुस्तकें & कीमत मात्र ₹99
+  - [✅ YES Enroll Now] & [❌ Not Interested] Buttons
   - Real-time MongoDB Saving (No Data Loss & Duplicate Lock)
   - Instant Admin Private Alerts
-  - 1-Click List & Broadcast Buttons
+  - Admin Panel with Remove Post & Student Re-enroll
 ============================================================
 """
 
@@ -44,21 +44,17 @@ WAITING_FOR_REMOVE_STUDENT = set()
 
 
 # ────────────────────────────────────────────────────────────
-# 1. CAPTIONS & KEYBOARDS
+# 1. EXACT USER-REQUESTED CAPTION & KEYBOARDS
 # ────────────────────────────────────────────────────────────
 
-def get_banner_caption():
+def get_post_text():
+    """Exact styling requested by user with Blockquote"""
     return (
-        f"🔥 **{config.BATCH_NAME}** 🔥\n"
-        f"**तैयारी आज की, जीत कल की !**\n\n"
-        f"📚 **इन्हीं 3 किताबों से पूरी तैयारी:**\n"
-        f"1️⃣ **Fatman** — Parmar SSC GK/GS Theory Book\n"
-        f"2️⃣ **Rasgulla Book** — Current Affairs 2024-25 (कुमार गौरव सर)\n"
-        f"3️⃣ **सुदर्शन चक्र** — GK/GS अति महत्वपूर्ण टॉपिक (कुमार गौरव सर)\n\n"
-        f"✨ **तीन किताबों से टॉपिक-वाइज़ क्विज़, सीधे और सरल रूप में!**\n"
-        f"📅 **शुरुआत:** {config.BATCH_START_DATE}\n"
-        f"💰 **फीस:** सिर्फ़ ₹{config.BATCH_FEE}\n\n"
-        f"👇 **क्या आप इस बैच में Enroll करना चाहते हैं?**"
+        "🔥 <b>अंतिम प्रहार महाबैच</b> 🔥\n\n"
+        "<blockquote>विशेष पुस्तकें - FATMAN , रसगुल्ला करेंट , सुदर्शन चक्र\n"
+        "💰 कीमत – मात्र ₹99</blockquote>\n\n"
+        "🚀 <b>बैच जल्द आ रहा है!</b>\n"
+        "📝 <b>आज ही रजिस्ट्रेशन करें!</b>"
     )
 
 def get_group_enroll_keyboard():
@@ -107,43 +103,42 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user.id == config.ADMIN_ID and chat.type == "private":
         students = db.get_enrolled_list()
         admin_text = (
-            f"👑 **ADMIN CONTROL PANEL**\n"
-            f"🎯 Batch: **{config.BATCH_NAME}**\n\n"
-            f"👥 **Total Enrolled Students:** `{len(students)}`\n"
-            f"💰 **Batch Fee:** `₹{config.BATCH_FEE}`\n\n"
-            f"Niche diye gaye **Buttons** se poora bot control karein 👇"
+            f"👑 <b>ADMIN CONTROL PANEL</b>\n"
+            f"🎯 Batch: <b>{config.BATCH_NAME}</b>\n\n"
+            f"👥 <b>Total Enrolled Students:</b> <code>{len(students)}</code>\n"
+            f"💰 <b>Batch Fee:</b> <code>₹{config.BATCH_FEE}</code>\n\n"
+            f"Niche diye gaye <b>Buttons</b> se poora bot control karein 👇"
         )
         await update.message.reply_text(
             admin_text,
             reply_markup=get_admin_dashboard_keyboard(),
-            parse_mode="Markdown"
+            parse_mode="HTML"
         )
         return
 
-    # AGAR GROUP HAI YA STUDENT HAI -> Photo + Buttons
+    # AGAR GROUP HAI YA STUDENT HAI -> Photo + Caption + Buttons
     keyboard = get_group_enroll_keyboard() if chat.type != "private" else get_student_dm_keyboard()
     try:
         if os.path.exists(BANNER_PATH):
             with open(BANNER_PATH, "rb") as photo:
                 await update.message.reply_photo(
                     photo=photo,
-                    caption=get_banner_caption(),
+                    caption=get_post_text(),
                     reply_markup=keyboard,
-                    parse_mode="Markdown"
+                    parse_mode="HTML"
                 )
         else:
             await update.message.reply_photo(
                 photo=BANNER_URL,
-                caption=get_banner_caption(),
+                caption=get_post_text(),
                 reply_markup=keyboard,
-                parse_mode="Markdown"
+                parse_mode="HTML"
             )
-    except Exception as e:
-        logger.warning(f"send_photo error: {e}. Falling back to text.")
+    except Exception:
         await update.message.reply_text(
-            get_banner_caption(),
+            get_post_text(),
             reply_markup=keyboard,
-            parse_mode="Markdown"
+            parse_mode="HTML"
         )
 
 
@@ -180,27 +175,29 @@ async def yes_enroll_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         logger.info(f"New Enrollment: {user.full_name} ({user.id})")
 
         # 2. Instant Private Alert to ADMIN
+        uname_text = f"@{user.username}" if user.username else "N/A"
         admin_alert = (
-            f"🔔 **NAYA BATCH ENROLLMENT!** 🔥\n\n"
-            f"👤 **Student Name:** {user.full_name}\n"
-            f"🏷️ **Username:** " + (f"@{user.username}" if user.username else "N/A") + "\n"
-            f"🆔 **Telegram ID:** `{user.id}`\n"
-            f"📚 **Batch:** {config.BATCH_NAME}\n"
-            f"🕒 **Time:** `{enrolled_time}`\n"
+            f"🔔 <b>NAYA BATCH ENROLLMENT!</b> 🔥\n\n"
+            f"👤 <b>Student Name:</b> {user.full_name}\n"
+            f"🏷️ <b>Username:</b> {uname_text}\n"
+            f"🆔 <b>Telegram ID:</b> <code>{user.id}</code>\n"
+            f"📚 <b>Batch:</b> {config.BATCH_NAME}\n"
+            f"🕒 <b>Time:</b> <code>{enrolled_time}</code>\n"
             f"─────────────────────\n"
-            f"✅ *Data MongoDB me successfully save ho gaya hai.*"
+            f"✅ <i>Data MongoDB me successfully save ho gaya hai.</i>"
         )
 
         try:
             await context.bot.send_message(
                 chat_id=config.ADMIN_ID,
                 text=admin_alert,
-                parse_mode="Markdown"
+                parse_mode="HTML"
             )
         except Exception as e:
             logger.error(f"Failed to send admin notification: {e}")
 
     else:
+        # Purane member ke dobara click karne par alert
         await query.answer("ℹ️ आप पहले से ही अंतिम प्रहार महाबैच में Enroll हो चुके हैं!", show_alert=True)
 
 
@@ -213,17 +210,17 @@ async def batch_info_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
     query = update.callback_query
     await query.answer()
     info_text = (
-        f"📖 **{config.BATCH_NAME} - Complete Information**\n\n"
-        f"🔹 **3 Books Coverage:** Parmar SSC Fatman + Rasgulla Book (Kumar Gaurav Sir) + Sudarshan Chakra\n"
-        f"🔹 **Daily Practice:** Topic-wise quizes directly based on these books\n"
-        f"🔹 **Target:** High Score in General Studies & Current Affairs\n"
-        f"💰 **Fee:** ₹{config.BATCH_FEE}\n\n"
+        f"📖 <b>{config.BATCH_NAME} - Complete Information</b>\n\n"
+        f"🔹 <b>3 Books Coverage:</b> Parmar SSC Fatman + Rasgulla Book (Kumar Gaurav Sir) + Sudarshan Chakra\n"
+        f"🔹 <b>Daily Practice:</b> Topic-wise quizes directly based on these books\n"
+        f"🔹 <b>Target:</b> High Score in General Studies & Current Affairs\n"
+        f"💰 <b>Fee:</b> ₹{config.BATCH_FEE}\n\n"
         f"Enroll karne ke liye niche button dabayein 👇"
     )
     await query.edit_message_caption(
         caption=info_text,
         reply_markup=get_student_dm_keyboard(),
-        parse_mode="Markdown"
+        parse_mode="HTML"
     )
 
 
@@ -231,19 +228,19 @@ async def support_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     text = (
-        f"📞 **Help & Support**\n\n"
+        f"📞 <b>Help & Support</b>\n\n"
         f"Kisi bhi query ya help ke liye aap Admin se contact kar sakte hain:\n"
-        f"Admin ID: `{config.ADMIN_ID}`"
+        f"Admin ID: <code>{config.ADMIN_ID}</code>"
     )
     await query.edit_message_caption(
         caption=text,
         reply_markup=get_student_dm_keyboard(),
-        parse_mode="Markdown"
+        parse_mode="HTML"
     )
 
 
 # ────────────────────────────────────────────────────────────
-# 4. ADMIN BUTTON HANDLERS (Post Lagayein, Hatayein, Remove Student)
+# 4. ADMIN BUTTON HANDLERS (Photo + Blockquote + Buttons)
 # ────────────────────────────────────────────────────────────
 
 # 1. Post Lagayein
@@ -253,29 +250,31 @@ async def admin_sendpost_btn(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     target_chat = config.GROUP_ID
     try:
+        # Photo + User's exact Blockquote caption + Buttons
         if os.path.exists(BANNER_PATH):
             with open(BANNER_PATH, "rb") as photo:
                 sent_msg = await context.bot.send_photo(
                     chat_id=target_chat,
                     photo=photo,
-                    caption=get_banner_caption(),
+                    caption=get_post_text(),
                     reply_markup=get_group_enroll_keyboard(),
-                    parse_mode="Markdown"
+                    parse_mode="HTML"
                 )
         else:
             sent_msg = await context.bot.send_photo(
                 chat_id=target_chat,
                 photo=BANNER_URL,
-                caption=get_banner_caption(),
+                caption=get_post_text(),
                 reply_markup=get_group_enroll_keyboard(),
-                parse_mode="Markdown"
+                parse_mode="HTML"
             )
         
         # Save post ID so it can be deleted later
         db.save_post_id(sent_msg.message_id)
         await query.message.reply_text(
-            f"✅ **Success!** अंतिम प्रहार महाबैच पोस्ट Group ({target_chat}) mein lag gayi hai!\n\n"
-            f"Jab bhi hatani ho, aap **'🗑️ Group se Post Hatayein'** button daba sakte hain."
+            f"✅ <b>Success!</b> अंतिम प्रहार महाबैच पोस्ट Group ({target_chat}) mein lag gayi hai!\n\n"
+            f"Jab bhi hatani ho, aap <b>'🗑️ Group se Post Hatayein'</b> button daba sakte hain.",
+            parse_mode="HTML"
         )
     except Exception as e:
         logger.error(f"Error in sendpost: {e}")
@@ -296,9 +295,10 @@ async def admin_deletepost_btn(update: Update, context: ContextTypes.DEFAULT_TYP
         await context.bot.delete_message(chat_id=config.GROUP_ID, message_id=post_id)
         db.clear_post_id()
         await query.message.reply_text(
-            "✅ **Post Successfully Removed!**\n\n"
+            "✅ <b>Post Successfully Removed!</b>\n\n"
             "Group se enrollment post hata di gayi hai. "
-            "Jab dobara lagani ho toh **'📢 Group me Post Lagayein'** button daba dein!"
+            "Jab dobara lagani ho toh <b>'📢 Group me Post Lagayein'</b> button daba dein!",
+            parse_mode="HTML"
         )
     except Exception as e:
         db.clear_post_id()
@@ -314,10 +314,10 @@ async def admin_list_btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
     total = len(students)
 
     if total == 0:
-        await query.message.reply_text(f"ℹ️ **{config.BATCH_NAME}** ke liye abhi tak koi enrollment nahi hua hai.")
+        await query.message.reply_text(f"ℹ️ <b>{config.BATCH_NAME}</b> ke liye abhi tak koi enrollment nahi hua hai.", parse_mode="HTML")
         return
 
-    header = f"📋 **{config.BATCH_NAME} - ENROLLED STUDENTS**\n👥 **Total Enrolled:** {total}\n"
+    header = f"📋 <b>{config.BATCH_NAME} - ENROLLED STUDENTS</b>\n👥 <b>Total Enrolled:</b> {total}\n"
     divider = "─" * 35 + "\n\n"
 
     lines = []
@@ -326,15 +326,15 @@ async def admin_list_btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
         uname = s.get('username', 'N/A')
         uid = s.get('user_id', '')
         time_str = s.get('enrolled_at', '')
-        lines.append(f"**{idx}.** {name} ({uname})\n   🆔 `{uid}` | 🕒 `{time_str}`")
+        lines.append(f"<b>{idx}.</b> {name} ({uname})\n   🆔 <code>{uid}</code> | 🕒 <code>{time_str}</code>")
 
     full_text = header + divider + "\n\n".join(lines)
 
     if len(full_text) < 4000:
-        await query.message.reply_text(full_text, parse_mode="Markdown")
+        await query.message.reply_text(full_text, parse_mode="HTML")
     else:
-        summary_text = f"📋 **{config.BATCH_NAME} - ENROLLMENT LIST**\n👥 **Total Enrolled:** {total}\n\nList text file mein attach ki gayi hai:"
-        await query.message.reply_text(summary_text, parse_mode="Markdown")
+        summary_text = f"📋 <b>{config.BATCH_NAME} - ENROLLMENT LIST</b>\n👥 <b>Total Enrolled:</b> {total}\n\nList text file mein attach ki gayi hai:"
+        await query.message.reply_text(summary_text, parse_mode="HTML")
 
         file_content = f"BATCH: {config.BATCH_NAME}\nTOTAL ENROLLED: {total}\n" + "="*50 + "\n\n"
         for idx, s in enumerate(students, start=1):
@@ -363,12 +363,12 @@ async def admin_ask_remove_btn(update: Update, context: ContextTypes.DEFAULT_TYP
     cancel_btn = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="adm_cancel_remove")]])
 
     await query.message.reply_text(
-        "❌ **Kis Student ko Remove karna chahte hain?**\n\n"
-        "Us student ka **Telegram User ID** yahan type karke bhejein.\n"
-        "*(User ID aapko '📋 Enrolled Students List' mein mil jayegi)*\n\n"
-        "Remove karne ke baad wo student **dobara enroll kar sakega**!",
+        "❌ <b>Kis Student ko Remove karna chahte hain?</b>\n\n"
+        "Us student ka <b>Telegram User ID</b> yahan type karke bhejein.\n"
+        "<i>(User ID aapko '📋 Enrolled Students List' mein mil jayegi)</i>\n\n"
+        "Remove karne ke baad wo student <b>dobara enroll kar sakega</b>!",
         reply_markup=cancel_btn,
-        parse_mode="Markdown"
+        parse_mode="HTML"
     )
 
 
@@ -388,11 +388,11 @@ async def admin_ask_broadcast_btn(update: Update, context: ContextTypes.DEFAULT_
     cancel_btn = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="adm_cancel_broadcast")]])
 
     await query.message.reply_text(
-        "📝 **Aap sabhi Enrolled Students ko kya message ya payment link bhejna chahte hain?**\n\n"
+        "📝 <b>Aap sabhi Enrolled Students ko kya message ya payment link bhejna chahte hain?</b>\n\n"
         "Apna poora message yahan type karke send kar dein. (Bot use sabhi ke inbox me deliver kar dega!)\n\n"
         "Agar abhi nahi bhejna toh niche Cancel dabayein:",
         reply_markup=cancel_btn,
-        parse_mode="Markdown"
+        parse_mode="HTML"
     )
 
 
@@ -410,16 +410,16 @@ async def admin_refresh_btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     students = db.get_enrolled_list()
     admin_text = (
-        f"👑 **ADMIN CONTROL PANEL**\n"
-        f"🎯 Batch: **{config.BATCH_NAME}**\n\n"
-        f"👥 **Total Enrolled Students:** `{len(students)}`\n"
-        f"💰 **Batch Fee:** `₹{config.BATCH_FEE}`\n\n"
-        f"Niche diye gaye **Buttons** se poora bot control karein 👇"
+        f"👑 <b>ADMIN CONTROL PANEL</b>\n"
+        f"🎯 Batch: <b>{config.BATCH_NAME}</b>\n\n"
+        f"👥 <b>Total Enrolled Students:</b> <code>{len(students)}</code>\n"
+        f"💰 <b>Batch Fee:</b> <code>₹{config.BATCH_FEE}</code>\n\n"
+        f"Niche diye gaye <b>Buttons</b> se poora bot control karein 👇"
     )
     await query.edit_message_text(
         admin_text,
         reply_markup=get_admin_dashboard_keyboard(),
-        parse_mode="Markdown"
+        parse_mode="HTML"
     )
 
 
@@ -443,13 +443,13 @@ async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if success:
             await update.message.reply_text(
-                f"✅ **Student Successfully Removed!**\n\n"
-                f"User ID: `{target_uid}` ko database se hata diya gaya hai. "
-                f"Ab yeh student chahe toh **dobara enroll kar sakta hai**!",
-                parse_mode="Markdown"
+                f"✅ <b>Student Successfully Removed!</b>\n\n"
+                f"User ID: <code>{target_uid}</code> ko database se hata diya gaya hai. "
+                f"Ab yeh student chahe toh <b>dobara enroll kar sakta hai</b>!",
+                parse_mode="HTML"
             )
         else:
-            await update.message.reply_text(f"❌ User ID `{target_uid}` enrollment list mein nahi mili.", parse_mode="Markdown")
+            await update.message.reply_text(f"❌ User ID <code>{target_uid}</code> enrollment list mein nahi mili.", parse_mode="HTML")
         return
 
     # 2. Handling Broadcast
@@ -462,7 +462,7 @@ async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("ℹ️ Koi student enrolled nahi hai.")
             return
 
-        status_msg = await update.message.reply_text(f"⏳ **Broadcasting to {len(students)} students...**")
+        status_msg = await update.message.reply_text(f"⏳ <b>Broadcasting to {len(students)} students...</b>", parse_mode="HTML")
         sent = 0
         failed = 0
 
@@ -471,8 +471,7 @@ async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             try:
                 await context.bot.send_message(
                     chat_id=target_uid,
-                    text=message_to_send,
-                    parse_mode="Markdown"
+                    text=message_to_send
                 )
                 sent += 1
                 await asyncio.sleep(0.05)
@@ -480,10 +479,10 @@ async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 failed += 1
 
         await status_msg.edit_text(
-            f"✅ **Broadcast Completed!**\n\n"
+            f"✅ <b>Broadcast Completed!</b>\n\n"
             f"📨 Successfully Sent: {sent}/{len(students)}\n"
             f"❌ Blocked/Failed: {failed}",
-            parse_mode="Markdown"
+            parse_mode="HTML"
         )
 
 
@@ -494,15 +493,15 @@ async def remove_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if not context.args or not context.args[0].isdigit():
-        await update.message.reply_text("⚠️ Format: `/remove <user_id>`\nExample: `/remove 12345678`", parse_mode="Markdown")
+        await update.message.reply_text("⚠️ Format: <code>/remove &lt;user_id&gt;</code>\nExample: <code>/remove 12345678</code>", parse_mode="HTML")
         return
 
     target_uid = int(context.args[0])
     success = db.remove_student(target_uid)
     if success:
-        await update.message.reply_text(f"✅ User ID `{target_uid}` successfully removed! Wo ab dobara enroll kar sakta hai.", parse_mode="Markdown")
+        await update.message.reply_text(f"✅ User ID <code>{target_uid}</code> successfully removed! Wo ab dobara enroll kar sakta hai.", parse_mode="HTML")
     else:
-        await update.message.reply_text(f"❌ User ID `{target_uid}` list mein nahi mili.", parse_mode="Markdown")
+        await update.message.reply_text(f"❌ User ID <code>{target_uid}</code> list mein nahi mili.", parse_mode="HTML")
 
 
 # ────────────────────────────────────────────────────────────
@@ -511,7 +510,7 @@ async def remove_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     print("=" * 60)
-    print("🚀 Starting Antim Prahar Bot with Guaranteed Online Banner & Buttons...")
+    print("🚀 Starting Antim Prahar Bot with Exact Blockquote & Buttons...")
     print(f"📌 Admin ID: {config.ADMIN_ID}")
     print("=" * 60)
 
