@@ -5,7 +5,7 @@
   - Blockquote styling: विशेष पुस्तकें & कीमत मात्र ₹99
   - [✅ YES Enroll Now] & [❌ Not Interested] Buttons
   - Real-time MongoDB Saving (No Data Loss & Duplicate Lock)
-  - Instant Admin Private Alerts
+  - Instant Admin Private Alerts (Enroll + Not Interested dono)
   - Admin Panel with Remove Post & Student Re-enroll
 ============================================================
 """
@@ -14,6 +14,7 @@ import os
 import io
 import asyncio
 import logging
+from datetime import datetime, timezone, timedelta
 from telegram import (
     Update, InlineKeyboardButton, InlineKeyboardMarkup
 )
@@ -41,6 +42,9 @@ BANNER_URL = "https://files.catbox.moe/pycwyv.jpg"
 # States for admin input
 WAITING_FOR_BROADCAST = set()
 WAITING_FOR_REMOVE_STUDENT = set()
+
+# Timezone
+IST = timezone(timedelta(hours=5, minutes=30))
 
 
 # ────────────────────────────────────────────────────────────
@@ -203,7 +207,29 @@ async def yes_enroll_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 async def not_interested_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
+    user = query.from_user
     await query.answer("👍 कोई बात नहीं! आपकी आगामी परीक्षा और तैयारी के लिए All the Best!", show_alert=True)
+
+    # Admin ko notification bhejo
+    uname_text = f"@{user.username}" if user.username else "N/A"
+    current_time = datetime.now(IST).strftime("%d-%m-%Y %I:%M %p")
+    admin_alert = (
+        f"❌ <b>NOT INTERESTED!</b>\n\n"
+        f"👤 <b>Name:</b> {user.full_name}\n"
+        f"🏷️ <b>Username:</b> {uname_text}\n"
+        f"🆔 <b>Telegram ID:</b> <code>{user.id}</code>\n"
+        f"🕒 <b>Time:</b> <code>{current_time}</code>\n"
+        f"─────────────────────\n"
+        f"💡 <i>Yeh student abhi interested nahi hai.</i>"
+    )
+    try:
+        await context.bot.send_message(
+            chat_id=config.ADMIN_ID,
+            text=admin_alert,
+            parse_mode="HTML"
+        )
+    except Exception as e:
+        logger.error(f"Failed to send not-interested alert: {e}")
 
 
 async def batch_info_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
