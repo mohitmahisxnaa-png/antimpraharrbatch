@@ -2,11 +2,12 @@
 ============================================================
   🎯 अंतिम प्रहार महाबैच - EXACT BANNER + BLOCKQUOTE BOT
   - Exact User-Requested Design (Photo + Blockquote Text + Buttons)
-  - Blockquote styling: विशेष पुस्तकें & कीमत मात्र ₹99
+  - Professional Executive Pop-up Dialogs
   - [✅ YES Enroll Now] & [❌ Not Interested] Buttons
   - Real-time MongoDB Saving (No Data Loss & Duplicate Lock)
-  - Instant Admin Private Alerts
-  - Admin Panel with Remove Post & Student Re-enroll
+  - Clean & Compact Admin Alerts (No DM Spam / In-place Dashboard Edit)
+  - Student Personal Confirmation DM & 2-Way Reply Support Chat
+  - Admin Panel with 1-Click Student Removal & Broadcast
 ============================================================
 """
 
@@ -14,6 +15,7 @@ import os
 import io
 import asyncio
 import logging
+from datetime import datetime, timezone, timedelta
 from telegram import (
     Update, InlineKeyboardButton, InlineKeyboardMarkup
 )
@@ -41,6 +43,9 @@ BANNER_URL = "https://files.catbox.moe/pycwyv.jpg"
 # States for admin input
 WAITING_FOR_BROADCAST = set()
 WAITING_FOR_REMOVE_STUDENT = set()
+
+# Timezone
+IST = timezone(timedelta(hours=5, minutes=30))
 
 
 # ────────────────────────────────────────────────────────────
@@ -199,7 +204,7 @@ async def yes_enroll_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 )
                 dm_sent = True
             except Exception as dm_err:
-                logger.info(f"Could not send DM to {user.id} (user hasn't pressed start in bot yet): {dm_err}")
+                logger.info(f"Could not send DM to {user.id}: {dm_err}")
                 dm_sent = False
 
             # 3. Compact & Clean Private Alert to ADMIN (DM ko clutter na kare)
@@ -330,7 +335,7 @@ async def support_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ────────────────────────────────────────────────────────────
-# 4. ADMIN BUTTON HANDLERS (Photo + Blockquote + Buttons)
+# 4. ADMIN BUTTON HANDLERS (In-Place Dashboard / No DM Spam)
 # ────────────────────────────────────────────────────────────
 
 # 1. Post Lagayein
@@ -338,7 +343,6 @@ async def admin_sendpost_btn(update: Update, context: ContextTypes.DEFAULT_TYPE)
     query = update.callback_query
     target_chat = config.GROUP_ID
     try:
-        # Photo + User's exact Blockquote caption + Buttons
         if os.path.exists(BANNER_PATH):
             with open(BANNER_PATH, "rb") as photo:
                 sent_msg = await context.bot.send_photo(
@@ -357,7 +361,6 @@ async def admin_sendpost_btn(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 parse_mode="HTML"
             )
         
-        # Save post ID so it can be deleted later
         db.save_post_id(sent_msg.message_id)
         await query.answer("✅ Success! अंतिम प्रहार महाबैच पोस्ट Group me lag gayi hai!", show_alert=True)
     except Exception as e:
@@ -383,7 +386,7 @@ async def admin_deletepost_btn(update: Update, context: ContextTypes.DEFAULT_TYP
         await query.answer(f"⚠️ Error: {e}", show_alert=True)
 
 
-# 3. Student List Dekhein
+# 3. Student List Dekhein (In-place edit)
 async def admin_list_btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -399,7 +402,6 @@ async def admin_list_btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
     divider = "─" * 35 + "\n\n"
 
     lines = []
-    # 1-Click Remove buttons banayein taaki admin bina type kiye seedha button se remove kar sake
     remove_buttons = []
     for idx, s in enumerate(students, start=1):
         name = s.get('full_name', 'Unknown')
@@ -408,7 +410,6 @@ async def admin_list_btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
         time_str = s.get('enrolled_at', '')
         lines.append(f"<b>{idx}.</b> {name} ({uname})\n   🆔 <code>{uid}</code> | 🕒 <code>{time_str}</code>")
         
-        # Har student ka 1-click remove button (max 20)
         if idx <= 20:
             btn_label = f"❌ Remove {name[:14]} ({uname[:12]})"
             remove_buttons.append([InlineKeyboardButton(btn_label, callback_data=f"del_std_{uid}")])
@@ -444,16 +445,9 @@ async def admin_del_student_callback(update: Update, context: ContextTypes.DEFAU
     success, removed = db.remove_student(target_id)
     if success and removed:
         name = removed.get('full_name', 'Student')
-        uname = removed.get('username', '')
         await query.answer(f"✅ {name} successfully removed!", show_alert=True)
-        await query.message.reply_text(
-            f"✅ <b>Student Successfully Removed!</b>\n\n"
-            f"👤 <b>Name:</b> {name}\n"
-            f"🏷️ <b>Username:</b> {uname}\n"
-            f"🆔 <b>User ID:</b> <code>{removed.get('user_id')}</code>\n\n"
-            f"Yeh student MongoDB Atlas se remove ho gaya hai aur ab <b>dobara enroll kar sakta hai</b>! 🚀",
-            parse_mode="HTML"
-        )
+        # Update list immediately
+        await admin_list_btn(update, context)
     else:
         await query.answer("❌ Student list mein nahi mila ya pehle hi remove ho chuka hai.", show_alert=True)
 
@@ -517,10 +511,10 @@ async def admin_cancel_broadcast(update: Update, context: ContextTypes.DEFAULT_T
     await query.edit_message_text("❌ Broadcast cancel kar diya gaya.")
 
 
-# 7. Refresh
+# 7. Refresh Dashboard
 async def admin_refresh_btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer("🔄 Refreshing...")
+    await query.answer("🔄 Refreshed!")
 
     students = db.get_enrolled_list()
     admin_text = (
@@ -546,15 +540,12 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     text = (update.message.text or "").strip()
 
-    # Sirf Private Chats me messages handle karein
     if chat.type != "private":
         return
 
-    # ========================================================
     # CASE A: AGAR ADMIN NE MESSAGE BHEJA HAI
-    # ========================================================
     if user.id == config.ADMIN_ID:
-        # 1. Check agar Admin kisi Student ke message ko Telegram 'Reply' kar raha hai
+        # 1. Telegram 'Reply' Feature
         if update.message.reply_to_message:
             rep_msg = update.message.reply_to_message.text or ""
             import re
@@ -573,17 +564,15 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         parse_mode="HTML"
                     )
                     await update.message.reply_text(
-                        f"✅ <b>Reply Successfully Sent!</b>\n\n"
-                        f"🆔 <b>Student ID:</b> <code>{target_student_id}</code>\n"
-                        f"💬 <b>Aapka Message:</b> {text}",
+                        f"✅ <b>Reply Sent to ID <code>{target_student_id}</code>!</b>",
                         parse_mode="HTML"
                     )
                     return
                 except Exception as err:
-                    await update.message.reply_text(f"❌ Student ko message bhejne me dikkat aayi: {err}")
+                    await update.message.reply_text(f"❌ Error: {err}")
                     return
 
-        # 2. Check agar Admin Student Remove ID bhej raha hai
+        # 2. Student Remove via text
         if user.id in WAITING_FOR_REMOVE_STUDENT:
             WAITING_FOR_REMOVE_STUDENT.discard(user.id)
             success, removed = db.remove_student(text)
@@ -593,21 +582,19 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 uid = removed.get('user_id', '')
                 await update.message.reply_text(
                     f"✅ <b>Student Successfully Removed!</b>\n\n"
-                    f"👤 <b>Name:</b> {name}\n"
-                    f"🏷️ <b>Username:</b> {uname}\n"
+                    f"👤 <b>Name:</b> {name} ({uname})\n"
                     f"🆔 <b>User ID:</b> <code>{uid}</code>\n\n"
-                    f"Yeh student database se remove ho gaya hai aur ab <b>dobara enroll kar sakta hai</b>! 🚀",
+                    f"Yeh student ab <b>dobara enroll kar sakta hai</b>! 🚀",
                     parse_mode="HTML"
                 )
             else:
                 await update.message.reply_text(
-                    f"❌ <code>{text}</code> enrollment list mein nahi mila.\n"
-                    f"Kripya sahi User ID ya @username bhejein.",
+                    f"❌ <code>{text}</code> enrollment list mein nahi mila.",
                     parse_mode="HTML"
                 )
             return
 
-        # 3. Check agar Admin Broadcast Message bhej raha hai
+        # 3. Broadcast via text
         if user.id in WAITING_FOR_BROADCAST:
             WAITING_FOR_BROADCAST.discard(user.id)
             students = db.get_enrolled_list()
@@ -640,35 +627,24 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
-        # Default Admin prompt
         return
 
-    # ========================================================
     # CASE B: AGAR KISI STUDENT NE BOT KO PRIVATE MESSAGE KIYA HAI
-    # ========================================================
-    # 1. Student ko confirmation
     await update.message.reply_text(
         "✅ <b>आपका संदेश Admin तक पहुँचा दिया गया है!</b>\n\n"
         "जल्द ही Admin आपको यहीं Bot के माध्यम से उत्तर देंगे। धैर्य रखने के लिए धन्यवाद! 🙏",
         parse_mode="HTML"
     )
 
-    # 2. Admin ko alert bhejo
     uname_str = f"@{user.username}" if user.username else "N/A"
     current_time = datetime.now(IST).strftime("%d-%m-%Y %I:%M %p")
     admin_notif = (
         f"📩 <b>NAYA STUDENT MESSAGE!</b>\n\n"
-        f"👤 <b>From:</b> {user.full_name}\n"
-        f"🏷️ <b>Username:</b> {uname_str}\n"
-        f"🆔 <b>Telegram ID:</b> <code>{user.id}</code>\n"
-        f"🕒 <b>Time:</b> <code>{current_time}</code>\n"
-        f"─────────────────────\n"
-        f"💬 <b>Student ka Message:</b>\n"
+        f"👤 <b>From:</b> {user.full_name} ({uname_str})\n"
+        f"🆔 <b>Telegram ID:</b> <code>{user.id}</code> | 🕒 <code>{current_time}</code>\n"
+        f"💬 <b>Message:</b>\n"
         f"<blockquote>{text}</blockquote>\n"
-        f"─────────────────────\n"
-        f"👉 <b>Reply kaise karein:</b>\n"
-        f"1️⃣ Is message ko Telegram mein <b>'Reply'</b> karein aur javab likh dein!\n"
-        f"2️⃣ Ya command likhein: <code>/reply {user.id} Aapka javab</code>"
+        f"👉 <i>Is message ko 'Reply' karein ya likhein:</i> <code>/reply {user.id} Javab</code>"
     )
 
     try:
@@ -714,16 +690,14 @@ async def reply_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="HTML"
         )
         await update.message.reply_text(
-            f"✅ <b>Reply Successfully Sent!</b>\n\n"
-            f"🆔 <b>Student ID:</b> <code>{target_student_id}</code>\n"
-            f"💬 <b>Message:</b> {reply_text}",
+            f"✅ <b>Reply Sent to ID <code>{target_student_id}</code>!</b>",
             parse_mode="HTML"
         )
     except Exception as e:
-        await update.message.reply_text(f"❌ Student ko message bhejne mein error aaya: {e}")
+        await update.message.reply_text(f"❌ Error: {e}")
 
 
-# Command se bhi remove kar sakein: /remove <user_id ya username>
+# Command: /remove <user_id ya username>
 async def remove_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if user_id != config.ADMIN_ID:
