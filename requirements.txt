@@ -1,0 +1,5 @@
+python-telegram-bot==22.8
+pymongo==4.19.0
+certifi>=2024.0.0
+qrcode>=8.0
+pillow>=10.0.0
