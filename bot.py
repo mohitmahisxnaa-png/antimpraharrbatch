@@ -1,7 +1,7 @@
 """
 ============================================================
   🎯 अंतिम प्रहार महाबैच - 100% BUTTON-DRIVEN BOT
-  - Admin Panel with 1-Click Interactive Buttons
+  - Online BANNER_URL Fallback (Photo 100% Guaranteed)
   - Group Post [Lagayein] & [Hatayein / Remove Post] Buttons
   - Student [Remove / Un-enroll] feature so they can enroll again
   - Real-time MongoDB Saving (No Data Loss & Duplicate Lock)
@@ -34,8 +34,9 @@ logger = logging.getLogger(__name__)
 # Initialize MongoDB
 db = DatabaseManager(mongo_uri=config.MONGO_URI, db_name=config.MONGO_DB_NAME)
 
-# Path to Banner Image
+# Path to Banner Image (Local + Online CDN Fallback)
 BANNER_PATH = os.path.join(os.path.dirname(__file__), "banner.jpg")
+BANNER_URL = "https://files.catbox.moe/pycwyv.jpg"
 
 # States for admin input
 WAITING_FOR_BROADCAST = set()
@@ -119,19 +120,29 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # AGAR GROUP HAI YA STUDENT HAI
-    if os.path.exists(BANNER_PATH):
-        with open(BANNER_PATH, "rb") as photo:
+    # AGAR GROUP HAI YA STUDENT HAI -> Photo + Buttons
+    keyboard = get_group_enroll_keyboard() if chat.type != "private" else get_student_dm_keyboard()
+    try:
+        if os.path.exists(BANNER_PATH):
+            with open(BANNER_PATH, "rb") as photo:
+                await update.message.reply_photo(
+                    photo=photo,
+                    caption=get_banner_caption(),
+                    reply_markup=keyboard,
+                    parse_mode="Markdown"
+                )
+        else:
             await update.message.reply_photo(
-                photo=photo,
+                photo=BANNER_URL,
                 caption=get_banner_caption(),
-                reply_markup=get_group_enroll_keyboard() if chat.type != "private" else get_student_dm_keyboard(),
+                reply_markup=keyboard,
                 parse_mode="Markdown"
             )
-    else:
+    except Exception as e:
+        logger.warning(f"send_photo error: {e}. Falling back to text.")
         await update.message.reply_text(
             get_banner_caption(),
-            reply_markup=get_group_enroll_keyboard() if chat.type != "private" else get_student_dm_keyboard(),
+            reply_markup=keyboard,
             parse_mode="Markdown"
         )
 
@@ -190,7 +201,6 @@ async def yes_enroll_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
             logger.error(f"Failed to send admin notification: {e}")
 
     else:
-        # Purane member ke dobara click karne par alert
         await query.answer("ℹ️ आप पहले से ही अंतिम प्रहार महाबैच में Enroll हो चुके हैं!", show_alert=True)
 
 
@@ -253,9 +263,10 @@ async def admin_sendpost_btn(update: Update, context: ContextTypes.DEFAULT_TYPE)
                     parse_mode="Markdown"
                 )
         else:
-            sent_msg = await context.bot.send_message(
+            sent_msg = await context.bot.send_photo(
                 chat_id=target_chat,
-                text=get_banner_caption(),
+                photo=BANNER_URL,
+                caption=get_banner_caption(),
                 reply_markup=get_group_enroll_keyboard(),
                 parse_mode="Markdown"
             )
@@ -267,6 +278,7 @@ async def admin_sendpost_btn(update: Update, context: ContextTypes.DEFAULT_TYPE)
             f"Jab bhi hatani ho, aap **'🗑️ Group se Post Hatayein'** button daba sakte hain."
         )
     except Exception as e:
+        logger.error(f"Error in sendpost: {e}")
         await query.message.reply_text(f"❌ Post lagane mein error aaya: {e}")
 
 
@@ -290,7 +302,7 @@ async def admin_deletepost_btn(update: Update, context: ContextTypes.DEFAULT_TYP
         )
     except Exception as e:
         db.clear_post_id()
-        await query.message.reply_text(f"⚠️ Post delete karne mein dikkat aayi (ho sakta hai pehle hi manually delete ho gayi ho): {e}")
+        await query.message.reply_text(f"⚠️ Post delete karne mein dikkat aayi: {e}")
 
 
 # 3. Student List Dekhein
@@ -499,7 +511,7 @@ async def remove_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     print("=" * 60)
-    print("🚀 Starting Antim Prahar Bot with Remove & Re-enroll...")
+    print("🚀 Starting Antim Prahar Bot with Guaranteed Online Banner & Buttons...")
     print(f"📌 Admin ID: {config.ADMIN_ID}")
     print("=" * 60)
 
