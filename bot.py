@@ -2,7 +2,8 @@
 ============================================================
   🎯 अंतिम प्रहार महाबैच - 100% BUTTON-DRIVEN BOT
   - Admin Panel with 1-Click Interactive Buttons
-  - Group Post with [✅ YES Enroll] & [❌ Not Interested]
+  - Group Post [Lagayein] & [Hatayein / Remove Post] Buttons
+  - Student [Remove / Un-enroll] feature so they can enroll again
   - Real-time MongoDB Saving (No Data Loss & Duplicate Lock)
   - Instant Admin Private Alerts
   - 1-Click List & Broadcast Buttons
@@ -36,8 +37,9 @@ db = DatabaseManager(mongo_uri=config.MONGO_URI, db_name=config.MONGO_DB_NAME)
 # Path to Banner Image
 BANNER_PATH = os.path.join(os.path.dirname(__file__), "banner.jpg")
 
-# State for tracking admin broadcast input
+# States for admin input
 WAITING_FOR_BROADCAST = set()
+WAITING_FOR_REMOVE_STUDENT = set()
 
 
 # ────────────────────────────────────────────────────────────
@@ -68,13 +70,19 @@ def get_group_enroll_keyboard():
 def get_admin_dashboard_keyboard():
     """Admin ke liye 1-Click Control Buttons"""
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("📢 Group me Post Bhejein", callback_data="adm_sendpost")],
+        [
+            InlineKeyboardButton("📢 Group me Post Lagayein", callback_data="adm_sendpost"),
+            InlineKeyboardButton("🗑️ Group se Post Hatayein", callback_data="adm_deletepost")
+        ],
         [
             InlineKeyboardButton("📋 Enrolled Students List", callback_data="adm_list"),
             InlineKeyboardButton("📊 Total Stats", callback_data="adm_stats")
         ],
-        [InlineKeyboardButton("📨 Sabhi ko Payment Message Bhejein", callback_data="adm_ask_broadcast")],
-        [InlineKeyboardButton("🔄 Refresh Panel", callback_data="adm_refresh")]
+        [
+            InlineKeyboardButton("❌ Student Remove Karein", callback_data="adm_ask_remove"),
+            InlineKeyboardButton("📨 Payment Link Bhejein", callback_data="adm_ask_broadcast")
+        ],
+        [InlineKeyboardButton("🔄 Refresh Dashboard", callback_data="adm_refresh")]
     ])
 
 def get_student_dm_keyboard():
@@ -87,7 +95,7 @@ def get_student_dm_keyboard():
 
 
 # ────────────────────────────────────────────────────────────
-# 2. /start COMMAND (Admin Panel vs Student Menu)
+# 2. /start & /admin COMMAND
 # ────────────────────────────────────────────────────────────
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -225,9 +233,10 @@ async def support_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ────────────────────────────────────────────────────────────
-# 4. ADMIN BUTTON HANDLERS (1-Click Actions)
+# 4. ADMIN BUTTON HANDLERS (Post Lagayein, Hatayein, Remove Student)
 # ────────────────────────────────────────────────────────────
 
+# 1. Post Lagayein
 async def admin_sendpost_btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer("📢 Group me post bheji ja rahi hai...")
@@ -236,7 +245,7 @@ async def admin_sendpost_btn(update: Update, context: ContextTypes.DEFAULT_TYPE)
     try:
         if os.path.exists(BANNER_PATH):
             with open(BANNER_PATH, "rb") as photo:
-                await context.bot.send_photo(
+                sent_msg = await context.bot.send_photo(
                     chat_id=target_chat,
                     photo=photo,
                     caption=get_banner_caption(),
@@ -244,17 +253,47 @@ async def admin_sendpost_btn(update: Update, context: ContextTypes.DEFAULT_TYPE)
                     parse_mode="Markdown"
                 )
         else:
-            await context.bot.send_message(
+            sent_msg = await context.bot.send_message(
                 chat_id=target_chat,
                 text=get_banner_caption(),
                 reply_markup=get_group_enroll_keyboard(),
                 parse_mode="Markdown"
             )
-        await query.message.reply_text(f"✅ **Success!** अंतिम प्रहार महाबैच पोस्ट Group ({target_chat}) mein chali gayi hai!")
+        
+        # Save post ID so it can be deleted later
+        db.save_post_id(sent_msg.message_id)
+        await query.message.reply_text(
+            f"✅ **Success!** अंतिम प्रहार महाबैच पोस्ट Group ({target_chat}) mein lag gayi hai!\n\n"
+            f"Jab bhi hatani ho, aap **'🗑️ Group se Post Hatayein'** button daba sakte hain."
+        )
     except Exception as e:
-        await query.message.reply_text(f"❌ Post bhejne mein error aaya: {e}")
+        await query.message.reply_text(f"❌ Post lagane mein error aaya: {e}")
 
 
+# 2. Post Hatayein / Delete Karein
+async def admin_deletepost_btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer("🗑️ Post hatayi ja rahi hai...")
+
+    post_id = db.get_post_id()
+    if not post_id:
+        await query.message.reply_text("ℹ️ Group mein abhi koi active enrollment post nahi mili.")
+        return
+
+    try:
+        await context.bot.delete_message(chat_id=config.GROUP_ID, message_id=post_id)
+        db.clear_post_id()
+        await query.message.reply_text(
+            "✅ **Post Successfully Removed!**\n\n"
+            "Group se enrollment post hata di gayi hai. "
+            "Jab dobara lagani ho toh **'📢 Group me Post Lagayein'** button daba dein!"
+        )
+    except Exception as e:
+        db.clear_post_id()
+        await query.message.reply_text(f"⚠️ Post delete karne mein dikkat aayi (ho sakta hai pehle hi manually delete ho gayi ho): {e}")
+
+
+# 3. Student List Dekhein
 async def admin_list_btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -273,8 +312,9 @@ async def admin_list_btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for idx, s in enumerate(students, start=1):
         name = s.get('full_name', 'Unknown')
         uname = s.get('username', 'N/A')
+        uid = s.get('user_id', '')
         time_str = s.get('enrolled_at', '')
-        lines.append(f"**{idx}.** {name} ({uname})\n   🕒 `{time_str}`")
+        lines.append(f"**{idx}.** {name} ({uname})\n   🆔 `{uid}` | 🕒 `{time_str}`")
 
     full_text = header + divider + "\n\n".join(lines)
 
@@ -294,6 +334,7 @@ async def admin_list_btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_document(document=bio, caption=f"📄 Enrolled Students ({total})")
 
 
+# 4. Total Stats
 async def admin_stats_btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     students = db.get_enrolled_list()
@@ -301,6 +342,32 @@ async def admin_stats_btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer(f"📊 Total Enrolled: {total} Students", show_alert=True)
 
 
+# 5. Student Remove / Un-enroll flow
+async def admin_ask_remove_btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    WAITING_FOR_REMOVE_STUDENT.add(query.from_user.id)
+    cancel_btn = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="adm_cancel_remove")]])
+
+    await query.message.reply_text(
+        "❌ **Kis Student ko Remove karna chahte hain?**\n\n"
+        "Us student ka **Telegram User ID** yahan type karke bhejein.\n"
+        "*(User ID aapko '📋 Enrolled Students List' mein mil jayegi)*\n\n"
+        "Remove karne ke baad wo student **dobara enroll kar sakega**!",
+        reply_markup=cancel_btn,
+        parse_mode="Markdown"
+    )
+
+
+async def admin_cancel_remove(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    WAITING_FOR_REMOVE_STUDENT.discard(query.from_user.id)
+    await query.edit_message_text("❌ Remove cancel kar diya gaya.")
+
+
+# 6. Broadcast flow
 async def admin_ask_broadcast_btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -324,6 +391,7 @@ async def admin_cancel_broadcast(update: Update, context: ContextTypes.DEFAULT_T
     await query.edit_message_text("❌ Broadcast cancel kar diya gaya.")
 
 
+# 7. Refresh
 async def admin_refresh_btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer("🔄 Refreshing...")
@@ -344,15 +412,38 @@ async def admin_refresh_btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ────────────────────────────────────────────────────────────
-# 5. TEXT HANDLER (Handles Broadcast Text from Admin)
+# 5. TEXT HANDLER (Broadcast Message & Student Remove ID)
 # ────────────────────────────────────────────────────────────
 
 async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+    text = update.message.text.strip()
 
+    # 1. Handling Student Removal
+    if user_id in WAITING_FOR_REMOVE_STUDENT and user_id == config.ADMIN_ID:
+        WAITING_FOR_REMOVE_STUDENT.discard(user_id)
+        if not text.isdigit():
+            await update.message.reply_text("⚠️ User ID sirf numbers mein hoti hai. Kripya sahi User ID bhejein.")
+            return
+
+        target_uid = int(text)
+        success = db.remove_student(target_uid)
+
+        if success:
+            await update.message.reply_text(
+                f"✅ **Student Successfully Removed!**\n\n"
+                f"User ID: `{target_uid}` ko database se hata diya gaya hai. "
+                f"Ab yeh student chahe toh **dobara enroll kar sakta hai**!",
+                parse_mode="Markdown"
+            )
+        else:
+            await update.message.reply_text(f"❌ User ID `{target_uid}` enrollment list mein nahi mili.", parse_mode="Markdown")
+        return
+
+    # 2. Handling Broadcast
     if user_id in WAITING_FOR_BROADCAST and user_id == config.ADMIN_ID:
         WAITING_FOR_BROADCAST.discard(user_id)
-        message_to_send = update.message.text
+        message_to_send = text
         students = db.get_enrolled_list()
 
         if not students:
@@ -384,13 +475,31 @@ async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
+# Command se bhi remove kar sakein: /remove <user_id>
+async def remove_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id != config.ADMIN_ID:
+        return
+
+    if not context.args or not context.args[0].isdigit():
+        await update.message.reply_text("⚠️ Format: `/remove <user_id>`\nExample: `/remove 12345678`", parse_mode="Markdown")
+        return
+
+    target_uid = int(context.args[0])
+    success = db.remove_student(target_uid)
+    if success:
+        await update.message.reply_text(f"✅ User ID `{target_uid}` successfully removed! Wo ab dobara enroll kar sakta hai.", parse_mode="Markdown")
+    else:
+        await update.message.reply_text(f"❌ User ID `{target_uid}` list mein nahi mili.", parse_mode="Markdown")
+
+
 # ────────────────────────────────────────────────────────────
 # 6. MAIN FUNCTION
 # ────────────────────────────────────────────────────────────
 
 def main():
     print("=" * 60)
-    print("🚀 Starting Antim Prahar 100% Button-Driven Bot...")
+    print("🚀 Starting Antim Prahar Bot with Remove & Re-enroll...")
     print(f"📌 Admin ID: {config.ADMIN_ID}")
     print("=" * 60)
 
@@ -399,6 +508,7 @@ def main():
     # Commands
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("admin", start_command))
+    app.add_handler(CommandHandler("remove", remove_command))
 
     # Student Buttons
     app.add_handler(CallbackQueryHandler(yes_enroll_handler, pattern="^btn_yes_enroll$"))
@@ -408,13 +518,16 @@ def main():
 
     # Admin Dashboard Buttons
     app.add_handler(CallbackQueryHandler(admin_sendpost_btn, pattern="^adm_sendpost$"))
+    app.add_handler(CallbackQueryHandler(admin_deletepost_btn, pattern="^adm_deletepost$"))
     app.add_handler(CallbackQueryHandler(admin_list_btn, pattern="^adm_list$"))
     app.add_handler(CallbackQueryHandler(admin_stats_btn, pattern="^adm_stats$"))
+    app.add_handler(CallbackQueryHandler(admin_ask_remove_btn, pattern="^adm_ask_remove$"))
+    app.add_handler(CallbackQueryHandler(admin_cancel_remove, pattern="^adm_cancel_remove$"))
     app.add_handler(CallbackQueryHandler(admin_ask_broadcast_btn, pattern="^adm_ask_broadcast$"))
     app.add_handler(CallbackQueryHandler(admin_cancel_broadcast, pattern="^adm_cancel_broadcast$"))
     app.add_handler(CallbackQueryHandler(admin_refresh_btn, pattern="^adm_refresh$"))
 
-    # Broadcast Text Input from Admin
+    # Text Input (Broadcast & Student Remove ID)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_admin_text))
 
     print("✅ Bot is running! Waiting for clicks...")
