@@ -166,39 +166,43 @@ async def yes_enroll_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         bot_username = context.bot.username or "antimpraharrbatch_bot"
 
         if is_new:
-            # 1. Pop-up alert for user
+            # 1. Pop-up alert for user (Screen par instant notice)
             alert_msg = (
                 f"🎉 बधाई हो {user.first_name}!\n\n"
                 f"आपका अंतिम प्रहार महाबैच में Enrollment सफलतापूर्वक दर्ज हो गया है! ✅\n\n"
-                f"बैच लॉन्च और पेमेंट लिंक सीधे इनबॉक्स में पाने के लिए @{bot_username} को एक बार Start जरूर कर लें!"
+                f"⚠️ कन्फर्मेशन व बैच अपडेट्स सीधे इनबॉक्स में पाने के लिए @{bot_username} को एक बार Start जरूर कर लें!"
             )
             await query.answer(alert_msg, show_alert=True)
             logger.info(f"New Enrollment: {user.full_name} ({user.id})")
 
-            # 2. Group me confirmation tag message
-            if update.effective_chat.type != "private":
-                try:
-                    conf_msg = await context.bot.send_message(
-                        chat_id=update.effective_chat.id,
-                        text=(
-                            f"🎉 <b>बधाई हो {user.mention_html()}!</b>\n"
-                            f"आपका <b>{config.BATCH_NAME}</b> में Enrollment सफलतापूर्वक दर्ज हो गया है! 🚀"
-                        ),
-                        parse_mode="HTML"
-                    )
-                    # 15 seconds ke baad auto-delete taaki group saaf rahe
-                    async def auto_delete(chat_id, msg_id):
-                        await asyncio.sleep(15)
-                        try:
-                            await context.bot.delete_message(chat_id=chat_id, message_id=msg_id)
-                        except Exception:
-                            pass
-                    asyncio.create_task(auto_delete(update.effective_chat.id, conf_msg.message_id))
-                except Exception as e:
-                    logger.warning(f"Could not send group confirmation: {e}")
+            # 2. Student ko Personal Private DM bhejo
+            dm_sent = False
+            try:
+                student_dm_text = (
+                    f"🎉 <b>बधाई हो {user.full_name}!</b>\n\n"
+                    f"आपका <b>{config.BATCH_NAME}</b> में Enrollment सफलतापूर्वक दर्ज हो गया है! 🚀\n\n"
+                    f"📖 <b>विशेष पुस्तकें:</b> FATMAN , रसगुल्ला करेंट , सुदर्शन चक्र\n"
+                    f"💰 <b>कीमत:</b> मात्र ₹{config.BATCH_FEE}\n\n"
+                    f"बैच लॉन्च होते ही पेमेंट व परचेज लिंक आपको सीधे यहीं इनबॉक्स में भेजा जाएगा।\n\n"
+                    f"💬 <i>यदि आपका कोई सवाल है तो आप इसी चैट में लिखकर भेज सकते हैं! Admin आपको यहीं Bot से जवाब देंगे।</i>"
+                )
+                await context.bot.send_message(
+                    chat_id=user.id,
+                    text=student_dm_text,
+                    parse_mode="HTML"
+                )
+                dm_sent = True
+            except Exception as dm_err:
+                logger.info(f"Could not send DM to {user.id} (user hasn't pressed start in bot yet): {dm_err}")
+                dm_sent = False
 
-            # 3. Instant Private Alert to ADMIN
+            # 3. Instant Private Alert to ADMIN (With DM Status)
             uname_text = f"@{user.username}" if user.username else "N/A"
+            if dm_sent:
+                dm_status_text = "✅ <b>Personal DM Sent to Student!</b>"
+            else:
+                dm_status_text = f"⚠️ <i>User ne abhi bot ko DM me /start nahi kiya hai (unhe popup me bol diya gaya hai).</i>"
+
             admin_alert = (
                 f"🔔 <b>NAYA BATCH ENROLLMENT!</b> 🔥\n\n"
                 f"👤 <b>Student Name:</b> {user.full_name}\n"
@@ -206,6 +210,7 @@ async def yes_enroll_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 f"🆔 <b>Telegram ID:</b> <code>{user.id}</code>\n"
                 f"📚 <b>Batch:</b> {config.BATCH_NAME}\n"
                 f"🕒 <b>Time:</b> <code>{enrolled_time}</code>\n"
+                f"📨 <b>Student Message:</b> {dm_status_text}\n"
                 f"─────────────────────\n"
                 f"✅ <i>Data MongoDB Atlas me successfully save ho gaya hai.</i>"
             )
@@ -269,30 +274,7 @@ async def not_interested_handler(update: Update, context: ContextTypes.DEFAULT_T
 
         await query.answer(alert_text, show_alert=True)
 
-        # 2. Group me confirmation tag message
-        if update.effective_chat.type != "private":
-            try:
-                txt = (
-                    f"👍 {user.mention_html()}, आपका नाम बैच लिस्ट से हटा दिया गया है!"
-                    if was_enrolled else
-                    f"👍 {user.mention_html()}, आपकी पसंद नोट कर ली गई है! All the Best! ✨"
-                )
-                conf_msg = await context.bot.send_message(
-                    chat_id=update.effective_chat.id,
-                    text=txt,
-                    parse_mode="HTML"
-                )
-                async def auto_delete(chat_id, msg_id):
-                    await asyncio.sleep(15)
-                    try:
-                        await context.bot.delete_message(chat_id=chat_id, message_id=msg_id)
-                    except Exception:
-                        pass
-                asyncio.create_task(auto_delete(update.effective_chat.id, conf_msg.message_id))
-            except Exception as e:
-                logger.warning(f"Could not send group not-interested confirmation: {e}")
-
-        # 3. Admin ko instant private alert
+        # 2. Admin ko instant private alert (Group me koi message nahi jayega, seedha aapke inbox me aayega)
         uname_text = f"@{user.username}" if user.username else "N/A"
         current_time = datetime.now(IST).strftime("%d-%m-%Y %I:%M %p")
 
@@ -591,70 +573,189 @@ async def admin_refresh_btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ────────────────────────────────────────────────────────────
-# 5. TEXT HANDLER (Broadcast Message & Student Remove ID)
+# 5. MESSAGE HANDLER & 2-WAY SUPPORT CHAT
 # ────────────────────────────────────────────────────────────
 
-async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    text = update.message.text.strip()
+async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat = update.effective_chat
+    user = update.effective_user
+    text = (update.message.text or "").strip()
 
-    # 1. Handling Student Removal
-    if user_id in WAITING_FOR_REMOVE_STUDENT and user_id == config.ADMIN_ID:
-        WAITING_FOR_REMOVE_STUDENT.discard(user_id)
-        
-        success, removed = db.remove_student(text)
-        if success and removed:
-            name = removed.get('full_name', 'Student')
-            uname = removed.get('username', 'N/A')
-            uid = removed.get('user_id', '')
-            await update.message.reply_text(
-                f"✅ <b>Student Successfully Removed!</b>\n\n"
-                f"👤 <b>Name:</b> {name}\n"
-                f"🏷️ <b>Username:</b> {uname}\n"
-                f"🆔 <b>User ID:</b> <code>{uid}</code>\n\n"
-                f"Yeh student database se remove ho gaya hai aur ab <b>dobara enroll kar sakta hai</b>! 🚀",
-                parse_mode="HTML"
-            )
-        else:
-            await update.message.reply_text(
-                f"❌ <code>{text}</code> enrollment list mein nahi mila.\n"
-                f"Kripya sahi User ID ya @username bhejein.",
-                parse_mode="HTML"
-            )
+    # Sirf Private Chats me messages handle karein
+    if chat.type != "private":
         return
 
-    # 2. Handling Broadcast
-    if user_id in WAITING_FOR_BROADCAST and user_id == config.ADMIN_ID:
-        WAITING_FOR_BROADCAST.discard(user_id)
-        message_to_send = text
-        students = db.get_enrolled_list()
+    # ========================================================
+    # CASE A: AGAR ADMIN NE MESSAGE BHEJA HAI
+    # ========================================================
+    if user.id == config.ADMIN_ID:
+        # 1. Check agar Admin kisi Student ke message ko Telegram 'Reply' kar raha hai
+        if update.message.reply_to_message:
+            rep_msg = update.message.reply_to_message.text or ""
+            import re
+            m = re.search(r"🆔 (?:Telegram )?ID:\s*<code>(\d+)</code>", rep_msg)
+            if m:
+                target_student_id = int(m.group(1))
+                try:
+                    await context.bot.send_message(
+                        chat_id=target_student_id,
+                        text=(
+                            f"💬 <b>अंतिम प्रहार महाबैच - Admin का जवाब:</b>\n\n"
+                            f"{text}\n\n"
+                            f"─────────────────────\n"
+                            f"<i>(यदि आपका कोई और सवाल है तो आप यहीं टाइप करके भेज सकते हैं)</i>"
+                        ),
+                        parse_mode="HTML"
+                    )
+                    await update.message.reply_text(
+                        f"✅ <b>Reply Successfully Sent!</b>\n\n"
+                        f"🆔 <b>Student ID:</b> <code>{target_student_id}</code>\n"
+                        f"💬 <b>Aapka Message:</b> {text}",
+                        parse_mode="HTML"
+                    )
+                    return
+                except Exception as err:
+                    await update.message.reply_text(f"❌ Student ko message bhejne me dikkat aayi: {err}")
+                    return
 
-        if not students:
-            await update.message.reply_text("ℹ️ Koi student enrolled nahi hai.")
+        # 2. Check agar Admin Student Remove ID bhej raha hai
+        if user.id in WAITING_FOR_REMOVE_STUDENT:
+            WAITING_FOR_REMOVE_STUDENT.discard(user.id)
+            success, removed = db.remove_student(text)
+            if success and removed:
+                name = removed.get('full_name', 'Student')
+                uname = removed.get('username', 'N/A')
+                uid = removed.get('user_id', '')
+                await update.message.reply_text(
+                    f"✅ <b>Student Successfully Removed!</b>\n\n"
+                    f"👤 <b>Name:</b> {name}\n"
+                    f"🏷️ <b>Username:</b> {uname}\n"
+                    f"🆔 <b>User ID:</b> <code>{uid}</code>\n\n"
+                    f"Yeh student database se remove ho gaya hai aur ab <b>dobara enroll kar sakta hai</b>! 🚀",
+                    parse_mode="HTML"
+                )
+            else:
+                await update.message.reply_text(
+                    f"❌ <code>{text}</code> enrollment list mein nahi mila.\n"
+                    f"Kripya sahi User ID ya @username bhejein.",
+                    parse_mode="HTML"
+                )
             return
 
-        status_msg = await update.message.reply_text(f"⏳ <b>Broadcasting to {len(students)} students...</b>", parse_mode="HTML")
-        sent = 0
-        failed = 0
+        # 3. Check agar Admin Broadcast Message bhej raha hai
+        if user.id in WAITING_FOR_BROADCAST:
+            WAITING_FOR_BROADCAST.discard(user.id)
+            students = db.get_enrolled_list()
 
-        for s in students:
-            target_uid = s.get("user_id")
-            try:
-                await context.bot.send_message(
-                    chat_id=target_uid,
-                    text=message_to_send
-                )
-                sent += 1
-                await asyncio.sleep(0.05)
-            except Exception:
-                failed += 1
+            if not students:
+                await update.message.reply_text("ℹ️ Koi student enrolled nahi hai.")
+                return
 
-        await status_msg.edit_text(
-            f"✅ <b>Broadcast Completed!</b>\n\n"
-            f"📨 Successfully Sent: {sent}/{len(students)}\n"
-            f"❌ Blocked/Failed: {failed}",
+            status_msg = await update.message.reply_text(f"⏳ <b>Broadcasting to {len(students)} students...</b>", parse_mode="HTML")
+            sent = 0
+            failed = 0
+
+            for s in students:
+                target_uid = s.get("user_id")
+                try:
+                    await context.bot.send_message(
+                        chat_id=target_uid,
+                        text=text
+                    )
+                    sent += 1
+                    await asyncio.sleep(0.05)
+                except Exception:
+                    failed += 1
+
+            await status_msg.edit_text(
+                f"✅ <b>Broadcast Completed!</b>\n\n"
+                f"📨 Successfully Sent: {sent}/{len(students)}\n"
+                f"❌ Blocked/Failed: {failed}",
+                parse_mode="HTML"
+            )
+            return
+
+        # Default Admin prompt
+        return
+
+    # ========================================================
+    # CASE B: AGAR KISI STUDENT NE BOT KO PRIVATE MESSAGE KIYA HAI
+    # ========================================================
+    # 1. Student ko confirmation
+    await update.message.reply_text(
+        "✅ <b>आपका संदेश Admin तक पहुँचा दिया गया है!</b>\n\n"
+        "जल्द ही Admin आपको यहीं Bot के माध्यम से उत्तर देंगे। धैर्य रखने के लिए धन्यवाद! 🙏",
+        parse_mode="HTML"
+    )
+
+    # 2. Admin ko alert bhejo
+    uname_str = f"@{user.username}" if user.username else "N/A"
+    current_time = datetime.now(IST).strftime("%d-%m-%Y %I:%M %p")
+    admin_notif = (
+        f"📩 <b>NAYA STUDENT MESSAGE!</b>\n\n"
+        f"👤 <b>From:</b> {user.full_name}\n"
+        f"🏷️ <b>Username:</b> {uname_str}\n"
+        f"🆔 <b>Telegram ID:</b> <code>{user.id}</code>\n"
+        f"🕒 <b>Time:</b> <code>{current_time}</code>\n"
+        f"─────────────────────\n"
+        f"💬 <b>Student ka Message:</b>\n"
+        f"<blockquote>{text}</blockquote>\n"
+        f"─────────────────────\n"
+        f"👉 <b>Reply kaise karein:</b>\n"
+        f"1️⃣ Is message ko Telegram mein <b>'Reply'</b> karein aur javab likh dein!\n"
+        f"2️⃣ Ya command likhein: <code>/reply {user.id} Aapka javab</code>"
+    )
+
+    try:
+        await context.bot.send_message(
+            chat_id=config.ADMIN_ID,
+            text=admin_notif,
             parse_mode="HTML"
         )
+    except Exception as e:
+        logger.error(f"Failed to forward student message to admin: {e}")
+
+
+# Command: /reply <student_id> <message>
+async def reply_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id != config.ADMIN_ID:
+        return
+
+    if not context.args or len(context.args) < 2:
+        await update.message.reply_text(
+            "⚠️ <b>Format:</b> <code>/reply &lt;student_id&gt; &lt;aapka javab&gt;</code>\n\n"
+            "Example: <code>/reply 8914751355 Batch jald hi shuru ho raha hai!</code>",
+            parse_mode="HTML"
+        )
+        return
+
+    if not context.args[0].isdigit():
+        await update.message.reply_text("⚠️ Student ID sirf numbers mein hoti hai.")
+        return
+
+    target_student_id = int(context.args[0])
+    reply_text = " ".join(context.args[1:])
+
+    try:
+        await context.bot.send_message(
+            chat_id=target_student_id,
+            text=(
+                f"💬 <b>अंतिम प्रहार महाबैच - Admin का जवाब:</b>\n\n"
+                f"{reply_text}\n\n"
+                f"─────────────────────\n"
+                f"<i>(यदि आपका कोई और सवाल है तो आप यहीं लिखकर पूछ सकते हैं)</i>"
+            ),
+            parse_mode="HTML"
+        )
+        await update.message.reply_text(
+            f"✅ <b>Reply Successfully Sent!</b>\n\n"
+            f"🆔 <b>Student ID:</b> <code>{target_student_id}</code>\n"
+            f"💬 <b>Message:</b> {reply_text}",
+            parse_mode="HTML"
+        )
+    except Exception as e:
+        await update.message.reply_text(f"❌ Student ko message bhejne mein error aaya: {e}")
 
 
 # Command se bhi remove kar sakein: /remove <user_id ya username>
@@ -700,6 +801,7 @@ def main():
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("admin", start_command))
     app.add_handler(CommandHandler("remove", remove_command))
+    app.add_handler(CommandHandler("reply", reply_command))
 
     # Student Buttons
     app.add_handler(CallbackQueryHandler(yes_enroll_handler, pattern="^btn_yes_enroll$"))
@@ -719,8 +821,8 @@ def main():
     app.add_handler(CallbackQueryHandler(admin_cancel_broadcast, pattern="^adm_cancel_broadcast$"))
     app.add_handler(CallbackQueryHandler(admin_refresh_btn, pattern="^adm_refresh$"))
 
-    # Text Input (Broadcast & Student Remove ID)
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_admin_text))
+    # Messages (Student to Admin Support + Admin Replies + Broadcast + Remove ID)
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_messages))
 
     print("✅ Bot is running! Waiting for clicks...")
     app.run_polling()
