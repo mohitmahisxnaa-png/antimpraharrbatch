@@ -89,7 +89,7 @@ def get_admin_dashboard_keyboard():
             InlineKeyboardButton("🗑️ Group se Post Hatayein", callback_data="adm_deletepost")
         ],
         [
-            InlineKeyboardButton("📋 Enrolled Students List", callback_data="adm_list_menu"),
+            InlineKeyboardButton("📋 Enrolled Students List", callback_data="adm_list"),
             InlineKeyboardButton("📊 Total Stats", callback_data="adm_stats")
         ],
         [
@@ -165,6 +165,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     chat = update.effective_chat
 
+    # AGAR GROUP ME BOT KO /start KIYA GAYA HAI -> Auto-Register Group
     if chat.type in ["group", "supergroup"]:
         if user.id == config.ADMIN_ID:
             groups = db.get_registered_groups(config.GROUP_1_ID, config.GROUP_2_ID)
@@ -186,6 +187,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
+    # AGAR ADMIN HAI PRIVATE CHAT ME -> Admin Dashboard with Buttons
     if user.id == config.ADMIN_ID and chat.type == "private":
         students_b1 = db.get_enrolled_list(config.BATCH_1_NAME)
         students_b2 = db.get_enrolled_list(config.BATCH_2_NAME)
@@ -213,6 +215,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    # STUDENT KE LIYE PRIVATE CHAT ME
     if chat.type == "private":
         caption = (
             f"👋 <b>नमस्ते {user.full_name}!</b>\n\n"
@@ -224,6 +227,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await send_banner_to_chat(context.bot, chat.id, caption, get_student_dm_keyboard())
         return
 
+    # GROUP ME DEFAULT POST
     await send_banner_to_chat(context.bot, chat.id, get_post_text("b1"), get_group_enroll_keyboard("b1"))
 
 
@@ -421,76 +425,50 @@ async def support_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ────────────────────────────────────────────────────────────
-# 4. MULTI-GROUP & MULTI-BATCH POSTING MENU
+# 4. DIRECT GROUP POSTING (Group 1, Group 2, ya Dono)
 # ────────────────────────────────────────────────────────────
 
 async def admin_sendpost_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
-    text = (
-        f"📢 <b>POST LAGAYEIN - BATCH SELECTION</b>\n\n"
-        f"Aap kis Batch ka post group me lagana chahte hain?\n\n"
-        f"1️⃣ <b>{config.BATCH_1_NAME}</b> (Fee: ₹{config.BATCH_1_FEE})\n"
-        f"2️⃣ <b>{config.BATCH_2_NAME}</b> (Fee: ₹{config.BATCH_2_FEE})\n\n"
-        f"Niche Batch select karein 👇"
-    )
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton(f"🎯 1. {config.BATCH_1_NAME}", callback_data="adm_choose_batch_b1")],
-        [InlineKeyboardButton(f"📰 2. {config.BATCH_2_NAME}", callback_data="adm_choose_batch_b2")],
-        [InlineKeyboardButton("🔙 Back to Dashboard", callback_data="adm_refresh")]
-    ])
-    await query.edit_message_text(text, reply_markup=keyboard, parse_mode="HTML")
-
-
-async def admin_choose_batch_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-
-    batch_key = "b2" if "b2" in query.data else "b1"
-    batch_name = config.BATCH_2_NAME if batch_key == "b2" else config.BATCH_1_NAME
-
     groups = db.get_registered_groups(config.GROUP_1_ID, config.GROUP_2_ID)
     g1 = groups.get("group_1")
     g2 = groups.get("group_2")
 
-    g1_label = g1["title"] if g1 else "Group 1 (Main Group)"
-    g2_label = g2["title"] if g2 else "Group 2 (Not Set)"
+    g1_label = g1["title"] if g1 else "Group 1 (Main Study Group)"
+    g2_label = g2["title"] if g2 else "Group 2"
 
     text = (
-        f"📍 <b>POST KAHAN LAGANI HAI?</b>\n\n"
-        f"🎯 Selected Batch: <b>{batch_name}</b>\n\n"
-        f"Aapke Connected Groups:\n"
+        f"📢 <b>POST KAHAN LAGANI HAI?</b>\n\n"
+        f"🎯 <b>अंतिम प्रहार महाबैच</b> (₹{config.BATCH_FEE})\n"
+        f"<blockquote>विशेष पुस्तकें - FATMAN , रसगुल्ला करेंट , सुदर्शन चक्र</blockquote>\n\n"
+        f"Aapke Groups:\n"
         f"1️⃣ <b>Group 1:</b> {g1_label}\n"
-        f"2️⃣ <b>Group 2:</b> {g2_label}\n\n"
-        f"Kis group me post bhejna chahte hain? 👇"
+        f"2️⃣ <b>Group 2:</b> {g2_label if g2 else '<i>(Abhi set nahi hai)</i>'}\n\n"
+        f"Kis group me post bhejna chahte hain? Select karein 👇"
     )
 
     buttons = [
-        [InlineKeyboardButton(f"📌 {g1_label[:20]} me Lagayein", callback_data=f"adm_post_send_{batch_key}_g1")],
+        [InlineKeyboardButton("📌 Group 1 me Lagayein", callback_data="adm_post_send_g1")],
     ]
     if g2:
-        buttons.append([InlineKeyboardButton(f"📌 {g2_label[:20]} me Lagayein", callback_data=f"adm_post_send_{batch_key}_g2")])
-        buttons.append([InlineKeyboardButton("📢 Dono Groups me Ek Sath", callback_data=f"adm_post_send_{batch_key}_both")])
+        buttons.append([InlineKeyboardButton("📌 Group 2 me Lagayein", callback_data="adm_post_send_g2")])
+        buttons.append([InlineKeyboardButton("📢 Dono Groups me Ek Sath", callback_data="adm_post_send_both")])
     else:
-        buttons.append([InlineKeyboardButton("➕ Group 2 Add Karein", callback_data="adm_manage_groups")])
+        buttons.append([InlineKeyboardButton("➕ Group 2 Add Karein (/setgroup2)", callback_data="adm_manage_groups")])
 
-    buttons.append([InlineKeyboardButton("🔙 Wapas Batch Chunayein", callback_data="adm_sendpost")])
+    buttons.append([InlineKeyboardButton("🔙 Back to Dashboard", callback_data="adm_refresh")])
 
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(buttons), parse_mode="HTML")
 
 
 async def admin_post_execute(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    data = query.data
+    target = query.data.replace("adm_post_send_", "")  # g1, g2, both
 
-    parts = data.split("_")
-    batch_key = parts[3]
-    target = parts[4]
-
-    batch_name = config.BATCH_2_NAME if batch_key == "b2" else config.BATCH_1_NAME
-    post_caption = get_post_text(batch_key)
-    post_keyboard = get_group_enroll_keyboard(batch_key)
+    post_caption = get_post_text()
+    post_keyboard = get_group_enroll_keyboard()
 
     groups = db.get_registered_groups(config.GROUP_1_ID, config.GROUP_2_ID)
     g1 = groups.get("group_1")
@@ -508,7 +486,7 @@ async def admin_post_execute(update: Update, context: ContextTypes.DEFAULT_TYPE)
         if g2:
             targets_to_send.append(("Group 2", g2["chat_id"]))
         elif target == "g2":
-            await query.answer("❌ Group 2 abhi set nahi hai! Pehle Group 2 connect karein.", show_alert=True)
+            await query.answer("❌ Group 2 abhi set nahi hai! Doosre group me /setgroup2 likhein.", show_alert=True)
             return
 
     sent_names = []
@@ -525,7 +503,7 @@ async def admin_post_execute(update: Update, context: ContextTypes.DEFAULT_TYPE)
             errors.append(f"{name}: {e}")
 
     if sent_names:
-        msg = f"✅ Success! Post bhej di gayi:\n🎯 Batch: {batch_name}\n📍 Groups: {', '.join(sent_names)}"
+        msg = f"✅ Success! Post bhej di gayi:\n📍 Groups: {', '.join(sent_names)}"
         if errors:
             msg += f"\n⚠️ Errors: {', '.join(errors)}"
         await query.answer(msg, show_alert=True)
@@ -582,6 +560,8 @@ async def admin_del_post_execute(update: Update, context: ContextTypes.DEFAULT_T
         targets_to_delete.append(("Group 2", g2["chat_id"]))
 
     deleted_names = []
+    not_found = []
+
     for name, cid in targets_to_delete:
         pid = db.get_post_id(chat_id=cid)
         if pid:
@@ -592,6 +572,8 @@ async def admin_del_post_execute(update: Update, context: ContextTypes.DEFAULT_T
             except Exception as e:
                 db.clear_post_id(chat_id=cid)
                 deleted_names.append(f"{name} (Cleared)")
+        else:
+            not_found.append(name)
 
     if deleted_names:
         await query.answer(f"✅ Post successfully hata di gayi: {', '.join(deleted_names)}", show_alert=True)
@@ -677,52 +659,20 @@ async def admin_change_banner_btn(update: Update, context: ContextTypes.DEFAULT_
 
 
 # ────────────────────────────────────────────────────────────
-# 8. ENROLLED STUDENTS LIST MENU (Batch 1, Batch 2, or All)
+# 8. ENROLLED STUDENTS LIST (Direct 1-Click View)
 # ────────────────────────────────────────────────────────────
 
-async def admin_list_menu_btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def admin_list_btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
-    b1_list = db.get_enrolled_list(config.BATCH_1_NAME)
-    b2_list = db.get_enrolled_list(config.BATCH_2_NAME)
-
-    text = (
-        f"📋 <b>ENROLLED STUDENTS LIST</b>\n\n"
-        f"🎯 1. <b>{config.BATCH_1_NAME}:</b> <code>{len(b1_list)}</code> Students\n"
-        f"📰 2. <b>{config.BATCH_2_NAME}:</b> <code>{len(b2_list)}</code> Students\n\n"
-        f"Kis batch ki list dekhna chahte hain? 👇"
-    )
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton(f"🎯 1. {config.BATCH_1_NAME} ({len(b1_list)})", callback_data="adm_viewlist_b1")],
-        [InlineKeyboardButton(f"📰 2. {config.BATCH_2_NAME} ({len(b2_list)})", callback_data="adm_viewlist_b2")],
-        [InlineKeyboardButton(f"📋 Sabhi Students ({len(b1_list) + len(b2_list)})", callback_data="adm_viewlist_all")],
-        [InlineKeyboardButton("🔙 Back to Dashboard", callback_data="adm_refresh")]
-    ])
-    await query.edit_message_text(text, reply_markup=keyboard, parse_mode="HTML")
-
-
-async def admin_viewlist_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-
-    target = query.data.replace("adm_viewlist_", "")
-    if target == "b1":
-        batch_name = config.BATCH_1_NAME
-        students = db.get_enrolled_list(batch_name)
-    elif target == "b2":
-        batch_name = config.BATCH_2_NAME
-        students = db.get_enrolled_list(batch_name)
-    else:
-        batch_name = "Sabhi Batches"
-        students = db.get_enrolled_list()
-
+    students = db.get_enrolled_list()
     total = len(students)
     if total == 0:
-        await query.answer(f"ℹ️ {batch_name} me abhi koi student enrolled nahi hai.", show_alert=True)
+        await query.answer("ℹ️ Abhi koi student enrolled nahi hai.", show_alert=True)
         return
 
-    header = f"📋 <b>{batch_name.upper()} - ENROLLED STUDENTS</b>\n👥 <b>Total:</b> {total}\n"
+    header = f"📋 <b>ENROLLED STUDENTS LIST</b>\n👥 <b>Total Enrolled:</b> {total}\n"
     divider = "─" * 35 + "\n\n"
 
     lines = []
@@ -733,15 +683,13 @@ async def admin_viewlist_callback(update: Update, context: ContextTypes.DEFAULT_
         uname = s.get('username', 'N/A')
         uid = s.get('user_id', '')
         time_str = s.get('enrolled_at', '')
-        bname = s.get('batch_name', '')
-        lines.append(f"<b>{idx}.</b> {name} ({uname})\n   🆔 <code>{uid}</code> | 🎯 {bname}\n   🕒 <code>{time_str}</code>")
+        lines.append(f"<b>{idx}.</b> {name} ({uname})\n   🆔 <code>{uid}</code> | 🕒 <code>{time_str}</code>")
 
-        if idx <= 15:
-            btn_label = f"❌ Remove {name[:12]} ({uid})"
+        if idx <= 20:
+            btn_label = f"❌ Remove {name[:14]} ({uname[:12]})"
             remove_buttons.append([InlineKeyboardButton(btn_label, callback_data=f"del_std_{uid}")])
 
-    remove_buttons.append([InlineKeyboardButton("🔙 Wapas List Menu", callback_data="adm_list_menu")])
-    remove_buttons.append([InlineKeyboardButton("🏠 Main Dashboard", callback_data="adm_refresh")])
+    remove_buttons.append([InlineKeyboardButton("🔙 Back to Dashboard", callback_data="adm_refresh")])
     list_markup = InlineKeyboardMarkup(remove_buttons)
 
     full_text = header + divider + "\n\n".join(lines)
@@ -750,20 +698,21 @@ async def admin_viewlist_callback(update: Update, context: ContextTypes.DEFAULT_
     if len(full_text) < 4000:
         await query.edit_message_text(full_text, reply_markup=list_markup, parse_mode="HTML")
     else:
-        file_content = f"BATCH: {batch_name}\nTOTAL ENROLLED: {total}\n" + "="*50 + "\n\n"
+        file_content = f"TOTAL ENROLLED: {total}\n" + "="*50 + "\n\n"
         for idx, s in enumerate(students, start=1):
-            file_content += f"{idx}. {s.get('full_name')} | Username: {s.get('username')} | ID: {s.get('user_id')} | Batch: {s.get('batch_name')} | Time: {s.get('enrolled_at')}\n"
+            file_content += f"{idx}. {s.get('full_name')} | Username: {s.get('username')} | ID: {s.get('user_id')} | Time: {s.get('enrolled_at')}\n"
 
         bio = io.BytesIO(file_content.encode('utf-8'))
-        bio.name = f"enrolled_{target}.txt"
+        bio.name = "enrolled_students.txt"
         bio.seek(0)
         await query.message.reply_document(
             document=bio,
-            caption=f"📄 Enrolled Students ({batch_name} - {total})",
+            caption=f"📄 Enrolled Students ({total})",
             reply_markup=list_markup
         )
 
 
+# 1-Click Student Removal Button Callback
 async def admin_del_student_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     target_id = query.data.replace("del_std_", "")
@@ -785,6 +734,7 @@ async def admin_del_student_callback(update: Update, context: ContextTypes.DEFAU
         await query.answer("❌ Student list mein nahi mila ya pehle hi remove ho chuka hai.", show_alert=True)
 
 
+# Total Stats
 async def admin_stats_btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     b1_count = len(db.get_enrolled_list(config.BATCH_1_NAME))
@@ -796,6 +746,7 @@ async def admin_stats_btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+# Student Remove via Text Input
 async def admin_ask_remove_btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -822,6 +773,7 @@ async def admin_cancel_remove(update: Update, context: ContextTypes.DEFAULT_TYPE
     await query.edit_message_text("❌ Remove cancel kar diya gaya.")
 
 
+# Broadcast flow
 async def admin_ask_broadcast_btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -845,6 +797,7 @@ async def admin_cancel_broadcast(update: Update, context: ContextTypes.DEFAULT_T
     await query.edit_message_text("❌ Broadcast cancel kar diya gaya.")
 
 
+# Refresh Dashboard
 async def admin_refresh_btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer("🔄 Refreshing...")
@@ -883,14 +836,18 @@ async def handle_photo_upload(update: Update, context: ContextTypes.DEFAULT_TYPE
     user = update.effective_user
     chat = update.effective_chat
 
+    # Sirf Admin aur Private Chat me
     if user.id != config.ADMIN_ID or chat.type != "private":
         return
 
+    # Photo ki sabse highest resolution wali file
     photo_file = update.message.photo[-1]
     file_id = photo_file.file_id
 
+    # 1. MongoDB Atlas me save karein (Railway restart par bhi safe!)
     db.save_banner_file_id(file_id)
 
+    # 2. Local fallback file me download karein
     try:
         tg_file = await context.bot.get_file(file_id)
         await tg_file.download_to_drive(custom_path=BANNER_PATH)
@@ -922,10 +879,15 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     text = (update.message.text or "").strip()
 
+    # Agar Group me koi text message aaya hai -> ignore
     if chat.type != "private":
         return
 
+    # ========================================================
+    # CASE A: AGAR ADMIN NE MESSAGE BHEJA HAI
+    # ========================================================
     if user.id == config.ADMIN_ID:
+        # 1. Group 2 ID enter karne ka input
         if user.id in WAITING_FOR_GROUP2_ID:
             WAITING_FOR_GROUP2_ID.discard(user.id)
             try:
@@ -942,6 +904,7 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text("❌ Invalid Group ID. Group ID sirf numbers mein hoti hai (jaise: <code>-1003493006883</code>).", parse_mode="HTML")
             return
 
+        # 2. Check agar Admin kisi Student ke message ko Telegram 'Reply' kar raha hai
         if update.message.reply_to_message:
             rep_msg = update.message.reply_to_message.text or ""
             m = re.search(r"🆔 (?:Telegram )?ID:\s*<code>(\d+)</code>", rep_msg)
@@ -969,6 +932,7 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await update.message.reply_text(f"❌ Student ko message bhejne me dikkat aayi: {err}")
                     return
 
+        # 3. Check agar Admin Student Remove ID bhej raha hai
         if user.id in WAITING_FOR_REMOVE_STUDENT:
             WAITING_FOR_REMOVE_STUDENT.discard(user.id)
             success, removed = db.remove_student(text)
@@ -992,6 +956,7 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
             return
 
+        # 4. Check agar Admin Broadcast Message bhej raha hai
         if user.id in WAITING_FOR_BROADCAST:
             WAITING_FOR_BROADCAST.discard(user.id)
             students = db.get_enrolled_list()
@@ -1076,6 +1041,7 @@ async def setgroup1_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user.id != config.ADMIN_ID:
         return
 
+    # If run inside group
     if chat.type in ["group", "supergroup"]:
         target_id = chat.id
         title = chat.title
@@ -1229,7 +1195,7 @@ def main():
     app.add_handler(CommandHandler("remove", remove_command))
     app.add_handler(CommandHandler("reply", reply_command))
 
-    # Student Buttons
+    # Student Buttons (Support both b1, b2, and legacy patterns)
     app.add_handler(CallbackQueryHandler(yes_enroll_handler, pattern="^(btn_yes_enroll|btn_yes_b1|btn_yes_b2)$"))
     app.add_handler(CallbackQueryHandler(not_interested_handler, pattern="^(btn_not_interested|btn_no_b1|btn_no_b2)$"))
     app.add_handler(CallbackQueryHandler(batch_info_handler, pattern="^btn_batch_info$"))
@@ -1237,7 +1203,6 @@ def main():
 
     # Admin: Posting & Groups Menu
     app.add_handler(CallbackQueryHandler(admin_sendpost_menu, pattern="^adm_sendpost$"))
-    app.add_handler(CallbackQueryHandler(admin_choose_batch_callback, pattern="^adm_choose_batch_"))
     app.add_handler(CallbackQueryHandler(admin_post_execute, pattern="^adm_post_send_"))
 
     # Admin: Post Delete Menu
@@ -1252,8 +1217,7 @@ def main():
     app.add_handler(CallbackQueryHandler(admin_change_banner_btn, pattern="^adm_change_banner$"))
 
     # Admin: Enrolled List & Stats
-    app.add_handler(CallbackQueryHandler(admin_list_menu_btn, pattern="^adm_list_menu$"))
-    app.add_handler(CallbackQueryHandler(admin_viewlist_callback, pattern="^adm_viewlist_"))
+    app.add_handler(CallbackQueryHandler(admin_list_btn, pattern="^(adm_list|adm_list_menu)$"))
     app.add_handler(CallbackQueryHandler(admin_del_student_callback, pattern="^del_std_"))
     app.add_handler(CallbackQueryHandler(admin_stats_btn, pattern="^adm_stats$"))
 
@@ -1269,7 +1233,7 @@ def main():
     # Photos (Admin sending photo to change banner!)
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo_upload))
 
-    # Messages (Student Support + Admin Replies + Broadcast + Input IDs)
+    # Messages (Student to Admin Support + Admin Replies + Broadcast + Input IDs)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_messages))
 
     print("✅ Bot is fully configured & ready!")
